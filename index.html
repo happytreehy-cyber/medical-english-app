@@ -1,0 +1,2252 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Medical English Pro 🏥</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Noto Sans KR','Noto Sans',sans-serif;background:#F0F8FF;-webkit-tap-highlight-color:transparent;}
+button{font-family:inherit;cursor:pointer;}
+input,textarea,select{font-family:inherit;}
+.pulse{animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+</style>
+</head>
+<body>
+<div id="app" style="max-width:430px;margin:0 auto;min-height:100vh;"></div>
+<script>
+// ═══════════════════════════
+// TTS
+// ═══════════════════════════
+var PLAYING=false;
+function spk(txt,lang){
+  if(!window.speechSynthesis)return;
+  lang=lang||'en-US';
+  window.speechSynthesis.cancel();
+  var u=new SpeechSynthesisUtterance(txt);
+  u.lang=lang;u.rate=0.84;u.pitch=1.0;u.volume=1.0;
+  var vs=window.speechSynthesis.getVoices();
+  var v=null;
+  for(var i=0;i<vs.length;i++){if(vs[i].lang===lang&&vs[i].name.indexOf('Google')>=0){v=vs[i];break;}}
+  if(!v)for(var i=0;i<vs.length;i++){if(vs[i].lang===lang){v=vs[i];break;}}
+  if(!v)for(var i=0;i<vs.length;i++){if(vs[i].lang.indexOf(lang.split('-')[0])===0){v=vs[i];break;}}
+  if(v)u.voice=v;
+  window.speechSynthesis.speak(u);
+}
+function playAll(lines,lang){
+  lang=lang||'en-US';
+  if(PLAYING){
+    window.speechSynthesis.cancel();
+    PLAYING=false;
+    var btn=document.getElementById('paBtn');
+    if(btn)btn.textContent='🔊 전체 대화 듣기';
+    return;
+  }
+  window.speechSynthesis.cancel();
+  PLAYING=true;
+  var btn=document.getElementById('paBtn');
+  if(btn)btn.textContent='⏹ 재생 중... (탭하면 정지)';
+  var i=0;
+  function next(){
+    if(i>=lines.length||!PLAYING){
+      PLAYING=false;
+      var b=document.getElementById('paBtn');
+      if(b)b.textContent='🔊 전체 대화 듣기';
+      return;
+    }
+    var item=lines[i];
+    var text=(typeof item==='string')?item:item.text;
+    var itemLang=(typeof item==='string')?lang:(item.lang||lang);
+    var u=new SpeechSynthesisUtterance(text);
+    u.lang=itemLang;u.rate=(typeof item==='object'&&item.slow)?0.72:0.84;u.volume=1.0;
+    var vs=window.speechSynthesis.getVoices();
+    for(var j=0;j<vs.length;j++){if(vs[j].lang===itemLang){u.voice=vs[j];break;}}
+    u.onend=function(){i++;setTimeout(next,380);};
+    u.onerror=function(){i++;setTimeout(next,380);};
+    window.speechSynthesis.speak(u);
+  }
+  next();
+}
+
+// ═══════════════════════════
+// STATE
+// ═══════════════════════════
+var SCREEN='home';
+var MODE=null;
+var TAB='scenarios';
+var ITEM=null; var SCRIPT=0;
+var SEARCH_Q=''; var VCNT=5; var MEM=[];
+var QI=0; var QANS=false;
+var LNAME=''; var POSTS_DATA=[];
+var MSG=''; var MSGTYPE='ok';
+var L_HOME='ko';
+
+var TRAVEL_TAB='scenarios'; var TRAVEL_ITEM=null; var TRAVEL_SCRIPT=0; var TRAVEL_COUNTRY='전체';
+var SHEET_STATUS=''; var SHEET_LOADING=false;
+
+var GARDEN={trees:[],flowers:[],benches:[],animals:[],decorations:[]};
+var PTS=0,STREAK=0,ATTENDED=false;
+
+try{
+  PTS=parseInt(localStorage.getItem('pts')||'0');
+  STREAK=parseInt(localStorage.getItem('str')||'0');
+  ATTENDED=localStorage.getItem('attDate')===new Date().toDateString();
+  var gLoad=JSON.parse(localStorage.getItem('garden')||'{"trees":[],"flowers":[],"benches":[],"animals":[],"decorations":[]}');
+  GARDEN=Object.assign({trees:[],flowers:[],benches:[],animals:[],decorations:[]},gLoad);
+  LNAME=localStorage.getItem('lname')||'';
+  POSTS_DATA=JSON.parse(localStorage.getItem('posts')||'[]');
+}catch(e){}
+
+if(POSTS_DATA.length===0){
+  POSTS_DATA=[
+    {id:1,user:'익명토끼🐰',time:'2시간 전',text:'오늘 외국인 학생 응대했는데 앱 덕분에 잘 됐어요! 😊',likes:12},
+    {id:2,user:'익명곰🐻',time:'4시간 전',text:'생리통 영어 표현 너무 유용해요!',likes:8},
+    {id:3,user:'익명여우🦊',time:'1일 전',text:'의학용어 매일 외우고 있어요. 정원도 점점 예뻐지네요 🌸',likes:15},
+  ];
+}
+
+function sv(){
+  try{
+    localStorage.setItem('pts',PTS);
+    localStorage.setItem('str',STREAK);
+    localStorage.setItem('garden',JSON.stringify(GARDEN));
+    localStorage.setItem('lname',LNAME);
+    localStorage.setItem('posts',JSON.stringify(POSTS_DATA));
+  }catch(e){}
+}
+function addPts(n){PTS+=n;sv();}
+function showMsg(txt,type){MSG=txt;MSGTYPE=type||'ok';render(modeHTML());setTimeout(function(){MSG='';render(modeHTML());},2500);}
+
+// ═══════════════════════════
+// GARDEN SHOP ITEMS
+// ═══════════════════════════
+var GARDEN_SHOP=[
+  {id:'cherry',cat:'trees',name:'벚나무',icon:'🌸',price:30,desc:'봄에 꽃이 피어요'},
+  {id:'pine',cat:'trees',name:'소나무',icon:'🌲',price:25,desc:'사계절 푸른 소나무'},
+  {id:'maple',cat:'trees',name:'단풍나무',icon:'🍁',price:35,desc:'가을에 빨갛게 물들어요'},
+  {id:'palm',cat:'trees',name:'야자나무',icon:'🌴',price:40,desc:'이국적인 느낌'},
+  {id:'appletree',cat:'trees',name:'사과나무',icon:'🍎',price:30,desc:'빨간 사과가 열려요'},
+  {id:'bamboo',cat:'trees',name:'대나무',icon:'🎋',price:20,desc:'바람에 살랑살랑'},
+  {id:'rose',cat:'flowers',name:'장미',icon:'🌹',price:15,desc:'빨간 장미가 피었어요'},
+  {id:'sunflower',cat:'flowers',name:'해바라기',icon:'🌻',price:15,desc:'해를 향해 피어요'},
+  {id:'tulip',cat:'flowers',name:'튤립',icon:'🌷',price:15,desc:'알록달록 튤립'},
+  {id:'daisy',cat:'flowers',name:'데이지',icon:'🌼',price:10,desc:'작고 귀여운 꽃'},
+  {id:'hibiscus',cat:'flowers',name:'무궁화',icon:'🌺',price:20,desc:'우리나라 국화'},
+  {id:'bouquet',cat:'flowers',name:'꽃다발',icon:'💐',price:25,desc:'화사한 꽃다발'},
+  {id:'gbench',cat:'benches',name:'나무 벤치',icon:'🪑',price:20,desc:'쉬어가는 벤치'},
+  {id:'fountain',cat:'benches',name:'분수',icon:'⛲',price:50,desc:'물이 졸졸 흘러요'},
+  {id:'lantern',cat:'benches',name:'정원 등불',icon:'🏮',price:25,desc:'밤에 따뜻하게 빛나요'},
+  {id:'swing',cat:'benches',name:'그네',icon:'🎠',price:35,desc:'바람을 타고 흔들려요'},
+  {id:'stone',cat:'benches',name:'돌 화로',icon:'🪨',price:15,desc:'정원의 포인트'},
+  {id:'bridge',cat:'benches',name:'작은 다리',icon:'🌉',price:45,desc:'개울 위의 다리'},
+  {id:'butterfly',cat:'animals',name:'나비',icon:'🦋',price:20,desc:'꽃 사이를 날아다녀요'},
+  {id:'bunny',cat:'animals',name:'토끼',icon:'🐇',price:30,desc:'깡충깡충 토끼'},
+  {id:'bird',cat:'animals',name:'파랑새',icon:'🐦',price:25,desc:'지저귀는 새'},
+  {id:'cat',cat:'animals',name:'고양이',icon:'🐈',price:35,desc:'낮잠 자는 고양이'},
+  {id:'squirrel',cat:'animals',name:'다람쥐',icon:'🐿️',price:25,desc:'도토리를 모아요'},
+  {id:'deer',cat:'animals',name:'사슴',icon:'🦌',price:40,desc:'우아한 사슴'},
+  {id:'rainbow',cat:'decorations',name:'무지개',icon:'🌈',price:30,desc:'비 온 뒤 무지개'},
+  {id:'moon',cat:'decorations',name:'달 조명',icon:'🌙',price:35,desc:'달빛이 내려앉아요'},
+  {id:'star',cat:'decorations',name:'별 모빌',icon:'⭐',price:25,desc:'별이 반짝여요'},
+  {id:'cloud',cat:'decorations',name:'구름',icon:'☁️',price:15,desc:'솜사탕 구름'},
+  {id:'mushroom',cat:'decorations',name:'버섯',icon:'🍄',price:20,desc:'귀여운 버섯'},
+  {id:'pond',cat:'decorations',name:'작은 연못',icon:'🏞️',price:45,desc:'물가의 연못'},
+];
+function isOwned(id){return Object.values(GARDEN).some(function(arr){return Array.isArray(arr)&&arr.indexOf(id)>=0;});}
+function buyGarden(id,cat,name,icon,price){
+  if(isOwned(id)){showMsg('이미 있는 아이템이에요!','err');return;}
+  if(PTS<price){showMsg('포인트가 부족해요! (현재 '+PTS+'pts)','err');return;}
+  PTS-=price;
+  if(!GARDEN[cat])GARDEN[cat]=[];
+  GARDEN[cat].push(id);
+  sv();
+  showMsg(icon+' '+name+' 정원에 추가됐어요! 🎉','ok');
+}
+
+// ═══════════════════════════
+// DAILY PHRASE
+// ═══════════════════════════
+var DAILY_PH=[
+  {en:'Where does it hurt?',ko:'어디가 아파요?',tip:'가장 기본적인 첫 마디예요.'},
+  {en:'On a scale of 1 to 10, how painful is it?',ko:'1부터 10까지 중 얼마나 아파요?',tip:'모든 언어권에서 통하는 통증 척도예요.'},
+  {en:'When did this start?',ko:'언제부터 이랬어요?',tip:'증상 시작 시점 파악이 중요해요.'},
+  {en:'Did you eat breakfast this morning?',ko:'오늘 아침 밥 먹었어요?',tip:'공복 두통·속쓰림의 주요 원인이에요.'},
+  {en:'What did you eat yesterday?',ko:'어제 뭐 먹었어요?',tip:'식체·설사 원인 파악에 필수예요.'},
+  {en:'Is your bowel movement regular?',ko:'대변이 규칙적으로 나오나요?',tip:'하복부 통증 진단의 핵심이에요.'},
+  {en:'Please lie down here and rest.',ko:'여기 누워서 쉬세요.',tip:'거의 모든 상황에 쓰이는 안정 지시예요.'},
+  {en:'Do you have any allergies?',ko:'알레르기 있나요?',tip:'처방 전 반드시 확인해야 해요.'},
+  {en:'Call 119 immediately!',ko:'즉시 119에 전화하세요!',tip:'응급상황에서 가장 중요한 문장이에요.'},
+  {en:'Check the airway first.',ko:'기도를 먼저 확인하세요.',tip:'ABC 응급 처치의 A(Airway)예요.'},
+  {en:'I will contact your parents.',ko:'부모님께 연락할게요.',tip:'학교 보건실에서 자주 쓰는 표현이에요.'},
+  {en:'Please take this medicine with water.',ko:'이 약을 물과 함께 드세요.',tip:'약 복용 안내의 기본이에요.'},
+  {en:'Avoid spicy and greasy food today.',ko:'오늘은 맵고 기름진 음식을 피하세요.',tip:'속쓰림·식체·설사 공통 안내예요.'},
+  {en:'Please wear a mask at all times.',ko:'항상 마스크를 착용해요.',tip:'감기·독감 전파 예방의 핵심이에요.'},
+  {en:'Do not lie down for 30 minutes after eating.',ko:'식후 30분은 눕지 마세요.',tip:'속쓰림 관리의 핵심 수칙이에요.'},
+  {en:'Apply the heat pack to your lower abdomen.',ko:'핫팩을 아랫배에 대세요.',tip:'생리통·식체에 효과적이에요.'},
+  {en:'Rest, Ice, Compression, Elevation.',ko:'안정, 냉찜질, 압박, 거상.',tip:'삐끗했을 때 RICE 원칙이에요.'},
+  {en:'Your test results are ready.',ko:'검사 결과가 나왔어요.',tip:'병원 외래에서 자주 쓰는 표현이에요.'},
+  {en:'Please fast before surgery.',ko:'수술 전 금식하세요.',tip:'NPO(Nothing by mouth) 지시예요.'},
+  {en:'Come back immediately if it gets worse.',ko:'더 나빠지면 바로 다시 와요.',tip:'귀가 후 추적 관리 안내예요.'},
+];
+function getDailyPhrase(){
+  var d=new Date();
+  var idx=(d.getDate()+d.getMonth()*31)%DAILY_PH.length;
+  return DAILY_PH[idx];
+}
+
+// ═══════════════════════════
+// VOCAB 100개
+// ═══════════════════════════
+var VOCAB=[
+  {en:'Blood pressure',ko:'혈압',cat:'바이탈',ex:'Your blood pressure is 120/80.'},
+  {en:'Pulse rate',ko:'맥박수',cat:'바이탈',ex:'Your pulse rate is 72 per minute.'},
+  {en:'Body temperature',ko:'체온',cat:'바이탈',ex:'Your temperature is 37.5°C.'},
+  {en:'Oxygen saturation',ko:'산소포화도',cat:'바이탈',ex:'Your oxygen saturation is 98%.'},
+  {en:'Respiratory rate',ko:'호흡수',cat:'바이탈',ex:'Your respiratory rate is 16 per minute.'},
+  {en:'Nausea',ko:'메스꺼움',cat:'증상',ex:'I feel nauseous.'},
+  {en:'Dizziness',ko:'어지러움',cat:'증상',ex:'I feel very dizzy.'},
+  {en:'Shortness of breath',ko:'호흡 곤란',cat:'증상',ex:'I have shortness of breath.'},
+  {en:'Chest pain',ko:'흉통',cat:'증상',ex:'I have chest pain.'},
+  {en:'Palpitation',ko:'심계항진',cat:'증상',ex:'I feel palpitations.'},
+  {en:'Edema',ko:'부종',cat:'증상',ex:'There is edema in the ankle.'},
+  {en:'Fever',ko:'발열',cat:'증상',ex:'The patient has a fever.'},
+  {en:'Chills',ko:'오한',cat:'증상',ex:'The patient has chills.'},
+  {en:'Fatigue',ko:'피로감',cat:'증상',ex:'I feel extreme fatigue.'},
+  {en:'Headache',ko:'두통',cat:'증상',ex:'I have a severe headache.'},
+  {en:'Abdominal pain',ko:'복통',cat:'증상',ex:'I have abdominal pain.'},
+  {en:'Constipation',ko:'변비',cat:'증상',ex:'I have constipation.'},
+  {en:'Diarrhea',ko:'설사',cat:'증상',ex:'I have diarrhea.'},
+  {en:'Vomiting',ko:'구토',cat:'증상',ex:'The patient is vomiting.'},
+  {en:'Loss of appetite',ko:'식욕 부진',cat:'증상',ex:'I have loss of appetite.'},
+  {en:'Diagnosis',ko:'진단',cat:'진단',ex:'The diagnosis is pneumonia.'},
+  {en:'Hypertension',ko:'고혈압',cat:'진단',ex:'The patient has hypertension.'},
+  {en:'Diabetes mellitus',ko:'당뇨병',cat:'진단',ex:'He has diabetes mellitus.'},
+  {en:'Fracture',ko:'골절',cat:'진단',ex:'There is a fracture in the wrist.'},
+  {en:'Sprain',ko:'염좌',cat:'진단',ex:'It is a sprain, not a fracture.'},
+  {en:'Laceration',ko:'열상',cat:'진단',ex:'There is a laceration on the forehead.'},
+  {en:'Contusion',ko:'타박상',cat:'진단',ex:'The patient has a contusion.'},
+  {en:'Inflammation',ko:'염증',cat:'진단',ex:'There is inflammation in the joint.'},
+  {en:'Infection',ko:'감염',cat:'진단',ex:'There is a bacterial infection.'},
+  {en:'Allergy',ko:'알러지',cat:'진단',ex:'The patient has a food allergy.'},
+  {en:'Prescription',ko:'처방전',cat:'처치',ex:'Here is your prescription.'},
+  {en:'Antibiotics',ko:'항생제',cat:'처치',ex:'I will prescribe antibiotics.'},
+  {en:'Analgesic',ko:'진통제',cat:'처치',ex:'Take this analgesic with water.'},
+  {en:'Antipyretic',ko:'해열제',cat:'처치',ex:'Give the antipyretic every 4 hours.'},
+  {en:'Antacid',ko:'제산제',cat:'처치',ex:'Take this antacid after meals.'},
+  {en:'Antihistamine',ko:'항히스타민제',cat:'처치',ex:'Take this antihistamine for allergy.'},
+  {en:'IV drip',ko:'정맥주사',cat:'처치',ex:'I will start an IV drip.'},
+  {en:'Suture',ko:'봉합',cat:'처치',ex:'The laceration needs sutures.'},
+  {en:'Dressing',ko:'드레싱',cat:'처치',ex:'I will change the dressing.'},
+  {en:'Moist dressing',ko:'습윤 드레싱',cat:'처치',ex:'A moist dressing heals faster.'},
+  {en:'Splint',ko:'부목',cat:'처치',ex:'I will apply a splint.'},
+  {en:'X-ray',ko:'엑스레이',cat:'처치',ex:'We need to take an X-ray.'},
+  {en:'ECG / EKG',ko:'심전도',cat:'처치',ex:'Let me do an ECG.'},
+  {en:'Blood test',ko:'혈액 검사',cat:'처치',ex:'We need a blood test.'},
+  {en:'CT scan',ko:'CT 촬영',cat:'처치',ex:'Let me order a CT scan.'},
+  {en:'Admission',ko:'입원',cat:'입퇴원',ex:'You need hospital admission.'},
+  {en:'Discharge',ko:'퇴원',cat:'입퇴원',ex:'You can be discharged today.'},
+  {en:'Inpatient',ko:'입원환자',cat:'입퇴원',ex:'He is an inpatient.'},
+  {en:'Outpatient',ko:'외래환자',cat:'입퇴원',ex:'She is an outpatient.'},
+  {en:'Emergency room',ko:'응급실',cat:'입퇴원',ex:'Go to the emergency room.'},
+  {en:'ICU',ko:'중환자실',cat:'입퇴원',ex:'The patient is in the ICU.'},
+  {en:'Cardiac arrest',ko:'심정지',cat:'응급',ex:'The patient is in cardiac arrest.'},
+  {en:'CPR',ko:'심폐소생술',cat:'응급',ex:'Start CPR immediately.'},
+  {en:'AED',ko:'자동심장충격기',cat:'응급',ex:'Get the AED now.'},
+  {en:'Anaphylaxis',ko:'아나필락시스',cat:'응급',ex:'This is anaphylaxis — call 119.'},
+  {en:'Syncope',ko:'실신',cat:'응급',ex:'The patient had a syncope episode.'},
+  {en:'Seizure',ko:'경련',cat:'응급',ex:'The patient is having a seizure.'},
+  {en:'Airway',ko:'기도',cat:'응급',ex:'Check the airway first.'},
+  {en:'Consciousness',ko:'의식',cat:'응급',ex:'Check the level of consciousness.'},
+  {en:'Orientation',ko:'지남력',cat:'응급',ex:'Check orientation: time, place, person.'},
+  {en:'Shock',ko:'쇼크',cat:'응급',ex:'The patient is going into shock.'},
+  {en:'General anesthesia',ko:'전신마취',cat:'수술',ex:'You will receive general anesthesia.'},
+  {en:'Local anesthesia',ko:'국소마취',cat:'수술',ex:'I will apply local anesthesia.'},
+  {en:'Surgery',ko:'수술',cat:'수술',ex:'Surgery is scheduled for tomorrow.'},
+  {en:'NPO',ko:'금식',cat:'수술',ex:'You must NPO after midnight.'},
+  {en:'Consent form',ko:'동의서',cat:'수술',ex:'Please sign the consent form.'},
+  {en:'Pregnancy',ko:'임신',cat:'산부인과',ex:'The pregnancy test is positive.'},
+  {en:'Menstruation',ko:'생리',cat:'산부인과',ex:'When was your last menstruation?'},
+  {en:'Dysmenorrhea',ko:'생리통',cat:'산부인과',ex:'She has severe dysmenorrhea.'},
+  {en:'Heat pack',ko:'온찜질',cat:'보건실',ex:'Apply a heat pack to your abdomen.'},
+  {en:'Ice pack',ko:'냉찜질',cat:'보건실',ex:'Apply an ice pack for 15-20 minutes.'},
+  {en:'Oral rehydration',ko:'경구수액',cat:'보건실',ex:'Drink this oral rehydration solution.'},
+  {en:'Saline solution',ko:'생리식염수',cat:'보건실',ex:'Rinse with saline solution.'},
+  {en:'Gastric acid',ko:'위산',cat:'보건실',ex:'Gastric acid irritates the stomach.'},
+  {en:'Indigestion',ko:'소화불량',cat:'보건실',ex:'You have indigestion.'},
+  {en:'Vaccination',ko:'예방접종',cat:'소아과',ex:'The child needs a vaccination.'},
+  {en:'Pediatrics',ko:'소아과',cat:'소아과',ex:'She is a pediatrics specialist.'},
+  {en:'Dislocation',ko:'탈구',cat:'정형외과',ex:'The shoulder is dislocated.'},
+  {en:'Arthritis',ko:'관절염',cat:'정형외과',ex:'She has rheumatoid arthritis.'},
+  {en:'Cast',ko:'깁스',cat:'정형외과',ex:'You need a cast for 6 weeks.'},
+  {en:'Physical therapy',ko:'물리치료',cat:'정형외과',ex:'You need physical therapy.'},
+  {en:'Asthma',ko:'천식',cat:'내과',ex:'The patient has asthma.'},
+  {en:'Bronchitis',ko:'기관지염',cat:'내과',ex:'She has acute bronchitis.'},
+  {en:'Pneumonia',ko:'폐렴',cat:'내과',ex:'The X-ray shows pneumonia.'},
+  {en:'Gastritis',ko:'위염',cat:'내과',ex:'He has chronic gastritis.'},
+  {en:'Appendicitis',ko:'맹장염',cat:'내과',ex:'Suspected appendicitis.'},
+  {en:'Arrhythmia',ko:'부정맥',cat:'심장',ex:'The patient has arrhythmia.'},
+  {en:'Heart rate',ko:'심박수',cat:'심장',ex:'Your heart rate is elevated.'},
+  {en:'Myocardial infarction',ko:'심근경색',cat:'심장',ex:'Rule out myocardial infarction.'},
+  {en:'Stroke',ko:'뇌졸중',cat:'신경',ex:'Suspected stroke — call 119.'},
+  {en:'Concussion',ko:'뇌진탕',cat:'신경',ex:'The patient has a concussion.'},
+  {en:'Migraine',ko:'편두통',cat:'신경',ex:'She suffers from migraines.'},
+  {en:'Medical history',ko:'병력',cat:'기타',ex:'Tell me your medical history.'},
+  {en:'Family history',ko:'가족력',cat:'기타',ex:'Any family history of heart disease?'},
+  {en:'Side effect',ko:'부작용',cat:'기타',ex:'Any side effects from the medication?'},
+  {en:'Follow-up',ko:'추적 관찰',cat:'기타',ex:'Please come back for a follow-up.'},
+  {en:'Chronic disease',ko:'만성 질환',cat:'기타',ex:'Do you have any chronic diseases?'},
+  {en:'Informed consent',ko:'사전 동의',cat:'기타',ex:'Please give your informed consent.'},
+  {en:'Isolation',ko:'격리',cat:'기타',ex:'You need to be in isolation.'},
+  {en:'Quarantine',ko:'격리 기간',cat:'기타',ex:'The quarantine period is 5 days.'},
+];
+function getTodayVocab(){
+  var day=new Date().getDay();
+  var st=(day*7)%VOCAB.length;
+  var arr=[];
+  for(var i=0;i<VCNT;i++)arr.push(VOCAB[(st+i)%VOCAB.length]);
+  return arr;
+}
+
+// ═══════════════════════════
+// SCHOOL SCENARIOS (PDF 기반)
+// ═══════════════════════════
+var SCHOOL_SC=[
+  {id:'heartburn',icon:'🔥',color:'#E85A3A',bg:'#FFF5F0',title:{ko:'속쓰림',en:'Heartburn'},
+   scripts:[
+     {label:{ko:'문진',en:'Assessment'},tip:{ko:'공복+카페인+마라탕이 주요 원인. 마지막 식사 시간 확인 필수.',en:'Empty stomach + caffeine + spicy food are main causes.'},
+      lines:[
+        {r:'n',en:"Hello, come in and sit down. What's wrong today?",ko:'어서 오세요, 앉아요. 오늘 어디가 불편해요?'},
+        {r:'s',en:'My stomach feels like it is burning. It hurts here.',ko:'속이 타는 것 같아요. 여기가 아파요.'},
+        {r:'n',en:'When did it start? Did you eat breakfast?',ko:'언제부터요? 아침 먹었어요?'},
+        {r:'s',en:'Since this morning. I only had coffee on an empty stomach.',ko:'오늘 아침부터요. 공복에 커피만 마셨어요.'},
+        {r:'n',en:'That is the cause. Caffeine on an empty stomach irritates the stomach lining.',ko:'그게 원인이에요. 공복에 카페인은 위 점막을 자극해요.'},
+        {r:'s',en:'I also had malatang for dinner yesterday.',ko:'어제 저녁에 마라탕도 먹었어요.'},
+        {r:'n',en:'Very spicy food also increases stomach acid. That makes it worse.',ko:'매운 음식도 위산을 증가시켜요. 그게 악화시켰을 거예요.'},
+      ]},
+     {label:{ko:'처치',en:'Treatment'},tip:{ko:'간식→제산제→미지근한 물→식후 30분 앉아있기. 마라탕X.',en:'Snack→antacid→warm water→sit upright 30 min. No spicy food.'},
+      lines:[
+        {r:'n',en:'First, please eat this light snack slowly.',ko:'먼저, 이 간단한 간식을 천천히 드세요.'},
+        {r:'n',en:'After eating, I will give you an antacid medicine.',ko:'드신 후에, 제산제 약을 드릴게요.'},
+        {r:'n',en:'Drink this warm water slowly — small sips are better.',ko:'이 미지근한 물을 천천히 마세요 — 조금씩 마시는 게 좋아요.'},
+        {r:'n',en:'Do not lie down for at least 30 minutes after eating.',ko:'식후 최소 30분은 절대 눕지 마세요.'},
+        {r:'s',en:'Should I avoid spicy food today?',ko:'오늘은 매운 음식 피해야 하나요?'},
+        {r:'n',en:'Yes. Avoid malatang, ramen, coffee, and energy drinks.',ko:'네. 마라탕, 라면, 커피, 에너지음료는 피하세요.'},
+        {r:'n',en:'Try not to lie face-down or wear tight clothing around your waist.',ko:'엎드려 눕거나 허리를 조이는 옷은 피해요.'},
+      ]},
+   ]},
+  {id:'stomachpain',icon:'🤢',color:'#8A5AAA',bg:'#F5F0FF',title:{ko:'복통 (부위별)',en:'Abdominal Pain'},
+   scripts:[
+     {label:{ko:'부위 확인',en:'Location Check'},tip:{ko:'부위가 진단의 핵심! 윗배=위/식도, 오른쪽아랫배=맹장, 아랫배=변비/생리통.',en:'Location is key! Upper=stomach, Right lower=appendix, Lower=constipation/period.'},
+      lines:[
+        {r:'n',en:'Where exactly does it hurt? Can you point to it?',ko:'정확히 어디가 아파요? 가리켜 볼 수 있어요?'},
+        {r:'s',en:'It hurts here — in the lower part, below my belly button.',ko:'여기요 — 아래쪽, 배꼽 아래요.'},
+        {r:'n',en:'Lower abdomen. Is it cramping or more like pressure?',ko:'아랫배네요. 쥐어짜는 느낌인가요, 압박감인가요?'},
+        {r:'s',en:'Cramping. And it feels very gassy and bloated.',ko:'쥐어짜는 느낌이요. 가스 차고 부어있는 것 같아요.'},
+        {r:'n',en:'When did you last have a bowel movement?',ko:'마지막으로 대변을 본 게 언제예요?'},
+        {r:'s',en:'Four days ago. I have not gone since then.',ko:'4일 전이요. 그 이후로 못 갔어요.'},
+        {r:'n',en:'Is your bowel movement usually regular?',ko:'평소에 대변이 규칙적으로 잘 나오나요?'},
+        {r:'s',en:'No, I often skip 2 to 3 days.',ko:'별로요. 자주 2~3일씩 건너뛰어요.'},
+      ]},
+     {label:{ko:'식사 문진',en:'Diet Check'},tip:{ko:'어제 먹은 것, 마지막 식사 시간 반드시 확인.',en:'Always check what they ate yesterday and last meal time.'},
+      lines:[
+        {r:'n',en:'What did you eat yesterday? What time was your last meal?',ko:'어제 뭐 먹었어요? 마지막으로 뭔가 먹은 게 몇 시예요?'},
+        {r:'s',en:'I had fried chicken and ramen for dinner around 8 PM.',ko:'어제 저녁 8시쯤에 치킨이랑 라면 먹었어요.'},
+        {r:'n',en:'Very oily and stimulating food. That could cause stomach pain.',ko:'기름지고 자극적인 음식이네요. 복통을 일으킬 수 있어요.'},
+        {r:'n',en:'Do you eat enough vegetables and fiber?',ko:'채소나 식이섬유를 충분히 먹나요?'},
+        {r:'s',en:'Not really. I prefer noodles and fried food.',ko:'별로요. 면 음식이랑 튀긴 음식을 더 좋아해요.'},
+        {r:'n',en:'That is a big factor for constipation. I will help you with that.',ko:'그게 변비의 큰 원인이에요. 도와드릴게요.'},
+      ]},
+   ]},
+  {id:'indigestion',icon:'😣',color:'#7A6AAA',bg:'#F0EEFF',title:{ko:'식체',en:'Indigestion'},
+   scripts:[{label:{ko:'문진+처치',en:'Assessment+Treatment'},tip:{ko:'급식, 추운곳, 스트레스 + 기름진 음식이 원인. 복부마사지+소화제+따뜻한물.',en:'Fast eating, cold place, stress + oily food. Massage+digestive med+warm water.'},
+    lines:[
+      {r:'n',en:"What's wrong? You look pale. Does your stomach feel full and tight?",ko:'어디가 불편해요? 안색이 창백해 보여요. 배가 꽉 차고 답답한가요?'},
+      {r:'s',en:'Yes, the food feels like it is stuck and not moving down.',ko:'네, 음식이 거기 걸려서 안 내려가는 느낌이에요.'},
+      {r:'n',en:'Did you eat quickly, or eat while stressed?',ko:'밥을 급하게 먹었거나, 스트레스 받은 상태에서 먹었어요?'},
+      {r:'s',en:'Yes, I ate really fast during lunch break.',ko:'네, 점심시간에 정말 빨리 먹었어요.'},
+      {r:'n',en:'Please lie on your back and breathe slowly and deeply.',ko:'등을 대고 누워서 천천히 깊게 숨을 쉬어요.'},
+      {r:'n',en:'I will do a gentle clockwise massage around your belly button. Is that okay?',ko:'배꼽 주변을 시계 방향으로 살살 마사지할게요. 괜찮아요?'},
+      {r:'n',en:'Drink this warm water slowly. After resting, a short walk will help.',ko:'이 따뜻한 물을 천천히 마세요. 쉬고 나서 천천히 걷는 게 도움돼요.'},
+      {r:'n',en:'Do not lie face-down and avoid tight clothing around your waist.',ko:'엎드려 눕지 말고 허리를 조이는 옷은 피하세요.'},
+    ]}]},
+  {id:'diarrhea',icon:'🚽',color:'#3A9A7A',bg:'#EDFAF4',title:{ko:'설사',en:'Diarrhea'},
+   scripts:[{label:{ko:'원인파악+처치',en:'Cause+Treatment'},tip:{ko:'세균/바이러스/스트레스 원인. 경구수액. 온찜질 절대 금지(맹장염 악화).',en:'Bacteria/virus/stress. Oral rehydration. NO heat pack — worsens appendicitis.'},
+    lines:[
+      {r:'n',en:'How many times since this morning?',ko:'오늘 아침부터 몇 번이나 갔어요?'},
+      {r:'s',en:'About 4 or 5 times. My stomach hurts a lot too.',ko:'4~5번 정도요. 배도 많이 아파요.'},
+      {r:'n',en:'Did you eat anything unusual? Any raw food or food from outside?',ko:'뭔가 특이한 거 먹었어요? 날 것이나 밖에서 먹은 거 있어요?'},
+      {r:'s',en:'I had ice cream and cold drinks.',ko:'아이스크림이랑 찬 음료를 마셨어요.'},
+      {r:'n',en:'Cold food in large amounts can upset the stomach.',ko:'찬 음식을 많이 먹으면 위장을 자극해요.'},
+      {r:'n',en:'Please drink this oral rehydration solution slowly — small sips.',ko:'이 경구수액을 천천히 조금씩 마세요.'},
+      {r:'n',en:'No spicy, greasy, or cold food today. And please wash your hands very carefully.',ko:'오늘은 맵고 기름지거나 찬 음식 금지. 손을 아주 꼼꼼히 씻어요.'},
+      {r:'n',en:'Do NOT apply a heat pack — it can worsen intestinal inflammation or appendicitis.',ko:'온찜질은 절대 하지 마세요 — 장내 염증이나 맹장염을 악화시킬 수 있어요.'},
+    ]}]},
+  {id:'period',icon:'🌸',color:'#C45A8A',bg:'#FFF0F8',title:{ko:'생리통',en:'Period Pain'},
+   scripts:[
+     {label:{ko:'비밀상담',en:'Private Consultation'},tip:{ko:'비밀보장 먼저 안내. 자궁수축+호르몬 설명.',en:'Assure confidentiality first. Explain uterine contraction + hormones.'},
+      lines:[
+        {r:'n',en:'Come in and close the door. Everything you tell me here is completely private.',ko:'들어오고 문 닫아요. 여기서 하는 이야기는 완전히 비밀이에요.'},
+        {r:'s',en:'I have really bad period cramps. I can barely sit in class.',ko:'생리통이 너무 심해요. 수업에 앉아 있기도 힘들어요.'},
+        {r:'n',en:'On a scale of 1 to 10, how bad is the pain right now?',ko:'지금 통증이 1부터 10까지 중에 얼마나 심해요?'},
+        {r:'s',en:'About an 8. My lower back hurts too, and I feel nauseous.',ko:'8 정도요. 허리도 아프고 메스껍기도 해요.'},
+        {r:'n',en:'Those are normal period cramp symptoms. The uterus is contracting and hormones cause the pain.',ko:'다 생리통의 정상적인 증상이에요. 자궁이 수축하고 호르몬이 통증을 일으켜요.'},
+      ]},
+     {label:{ko:'처치',en:'Treatment'},tip:{ko:'진통제+핫팩(아랫배)+복부압박해소+스트레칭. B6·마그네슘·바나나 권장. 카페인 자제.',en:'Pain reliever+heat pack(lower abdomen)+loose clothing+stretching. Avoid caffeine.'},
+      lines:[
+        {r:'n',en:'I will give you a pain reliever. Have you eaten anything today?',ko:'진통제를 드릴게요. 오늘 뭔가 먹었어요?'},
+        {r:'s',en:'Just a little at breakfast.',ko:'아침에 조금만요.'},
+        {r:'n',en:'Good. Take this medicine with water after a small snack.',ko:'좋아요. 간식 조금 먹고 물과 함께 드세요.'},
+        {r:'n',en:'Here is a heat pack. Place it on your lower abdomen — it relaxes muscles and improves blood flow.',ko:'여기 핫팩이에요. 아랫배에 대세요 — 근육을 이완시키고 혈액순환을 도와줘요.'},
+        {r:'n',en:'Please lie down here. Loosen any tight clothing around your waist.',ko:'여기 누워요. 허리를 조이는 옷은 느슨하게 해요.'},
+        {r:'n',en:'Gentle cat pose or butterfly pose stretches can help relieve cramping.',ko:'고양이 자세나 나비 자세 스트레칭이 경련 완화에 도움돼요.'},
+        {r:'n',en:'Avoid caffeine today. Try bananas, nuts, or magnesium-rich foods.',ko:'오늘은 카페인을 피하세요. 바나나, 견과류, 마그네슘 풍부한 음식을 드세요.'},
+      ]},
+   ]},
+  {id:'headache',icon:'🤕',color:'#D4845A',bg:'#FFF3EE',title:{ko:'두통',en:'Headache'},
+   scripts:[
+     {label:{ko:'유형 파악',en:'Type Check'},tip:{ko:'긴장성(전체조임) vs 편두통(한쪽욱신) vs 공복성(저혈당) 구분.',en:'Tension(whole head tight) vs Migraine(one side throbbing) vs Hunger(low blood sugar).'},
+      lines:[
+        {r:'n',en:'What kind of headache is it? Does your whole head feel tight and squeezed?',ko:'어떤 두통이에요? 머리 전체가 꽉 조이는 느낌인가요?'},
+        {r:'s',en:'Yes, like a tight band around my whole head.',ko:'네, 머리 전체에 밴드를 두른 것 같아요.'},
+        {r:'n',en:'That sounds like a tension headache — from stress, poor posture, or lack of sleep.',ko:'긴장성 두통 같아요 — 스트레스, 나쁜 자세, 수면 부족이 원인이에요.'},
+        {r:'n',en:'Or is it throbbing on one side — like a pulse?',ko:'아니면 한쪽이 맥박 뛰듯 욱신거리는 건 아닌가요?'},
+        {r:'n',en:'Did you eat breakfast? Low blood sugar is a very common headache cause in students.',ko:'아침 먹었어요? 저혈당은 학생들 두통의 아주 흔한 원인이에요.'},
+        {r:'s',en:'No, I only had coffee.',ko:'아니요, 커피만 마셨어요.'},
+        {r:'n',en:'Caffeine on an empty stomach causes a rebound headache. And looking down at your phone tightens neck muscles.',ko:'공복 카페인은 반동 두통을 일으켜요. 폰을 내려다보면 목 근육이 긴장해요.'},
+      ]},
+     {label:{ko:'처치',en:'Treatment'},tip:{ko:'간식→진통제→어둡고 조용한 곳 휴식→환기. 시야흐림+고열+목뻣뻣 → 즉시 병원.',en:'Snack→pain reliever→dark quiet rest→ventilate. Blurred vision+fever+stiff neck → hospital.'},
+      lines:[
+        {r:'n',en:'First, please eat this snack. Your blood sugar is probably low.',ko:'먼저, 이 간식을 드세요. 혈당이 낮을 가능성이 높아요.'},
+        {r:'n',en:'Then I will give you a pain reliever.',ko:'그 다음 진통제를 드릴게요.'},
+        {r:'n',en:'Please rest in a quiet and dim room. Try to close your eyes.',ko:'조용하고 어두운 곳에서 쉬어요. 눈을 감아 보세요.'},
+        {r:'n',en:'Make sure the room is ventilated — fresh air helps a lot.',ko:'방 환기가 되어 있는지 확인해요 — 맑은 공기가 많이 도움돼요.'},
+        {r:'n',en:'If you have blurred vision, stiff neck, or very high fever — that needs a hospital immediately.',ko:'시야가 흐려지거나 목이 뻣뻣하거나 고열이 있으면 즉시 병원이 필요해요.'},
+      ]},
+   ]},
+  {id:'sore_throat',icon:'😮',color:'#AA6A4A',bg:'#FFF5EE',title:{ko:'목감기',en:'Sore Throat'},
+   scripts:[{label:{ko:'문진+처치',en:'Assessment+Treatment'},tip:{ko:'가글+미지근한 물+마스크+가림막 급식. 출결인정 안내 포함.',en:'Gargle+warm water+mask+partition meal. Include attendance excuse info.'},
+    lines:[
+      {r:'n',en:'Open your mouth and say Aah for me.',ko:'입 벌리고 저한테 아 해보세요.'},
+      {r:'s',en:'Aah. Is it bad?',ko:'아. 심한가요?'},
+      {r:'n',en:'Your throat is red and swollen. I can see inflammation.',ko:'목이 빨갛고 부어있어요. 염증이 보여요.'},
+      {r:'n',en:'I will give you throat lozenges and a fever reducer.',ko:'목 사탕과 해열제를 드릴게요.'},
+      {r:'n',en:'Drink lukewarm water slowly — it helps flush waste from your throat.',ko:'미지근한 물을 천천히 마세요 — 목의 노폐물을 배출하는 데 도움돼요.'},
+      {r:'n',en:'Please gargle with warm water and wear a mask at all times.',ko:'따뜻한 물로 가글하고 항상 마스크를 착용해요.'},
+      {r:'n',en:'Sit where there is a partition in the cafeteria.',ko:'급식실에서 가림막이 있는 자리에 앉아요.'},
+      {r:'n',en:'If tested for flu or COVID today — your absence is excused even if negative.',ko:'오늘 독감이나 코로나 검사를 받으면 — 음성이어도 출결 인정이에요.'},
+    ]}]},
+  {id:'runny_nose',icon:'👃',color:'#5A7AAA',bg:'#EEF4FF',title:{ko:'코감기/비염',en:'Rhinitis'},
+   scripts:[{label:{ko:'감기 vs 비염 구분',en:'Cold vs Allergy'},tip:{ko:'열있음→감기, 열없음+연속재채기+눈가려움→비염. 생리식염수 코세척.',en:'Fever=cold. No fever+sneezing+itchy eyes=allergy. Saline nose wash.'},
+    lines:[
+      {r:'n',en:'Do you have a fever? Even a slight one?',ko:'열이 있어요? 약간이라도요?'},
+      {r:'s',en:'My eyes are very itchy. And I keep sneezing in a row.',ko:'눈도 너무 가려워요. 그리고 재채기가 연속으로 나요.'},
+      {r:'n',en:'No fever with itchy eyes and sneezing — that sounds like allergic rhinitis.',ko:'열 없이 눈가려움+연속재채기 — 알레르기성 비염처럼 들려요.'},
+      {r:'n',en:'On high pollen days, do not open windows. Use a saline nose wash.',ko:'꽃가루가 심한 날은 창문을 열지 말아요. 생리식염수로 코를 세척해요.'},
+      {r:'n',en:'Keep indoor humidity 50-60% and temperature around 20-22 degrees.',ko:'실내 습도는 50~60%, 온도는 20~22도를 유지해요.'},
+      {r:'n',en:'For a cold — wear a mask and ventilate the room to prevent spreading.',ko:'감기라면 — 마스크를 착용하고 방을 환기해서 전파를 막아요.'},
+    ]}]},
+  {id:'sprain',icon:'🦵',color:'#D4845A',bg:'#FFF3EE',title:{ko:'삐끗/염좌',en:'Sprain (RICE)'},
+   scripts:[{label:{ko:'RICE 처치',en:'RICE Protocol'},tip:{ko:'RICE 4단계: 안정→냉찜질(15-20분)→압박→거상. 온찜질 절대 금지.',en:'RICE: Rest→Ice(15-20min)→Compression→Elevation. NO heat pack.'},
+    lines:[
+      {r:'n',en:'Oh! Sit down right here. Do not try to walk on it.',ko:'어머! 여기 바로 앉아요. 걸으려고 하지 마세요.'},
+      {r:'s',en:'I twisted my ankle in PE class. It is swelling already.',ko:'체육 시간에 발목이 삐었어요. 이미 붓고 있어요.'},
+      {r:'n',en:'We will follow RICE. First — Rest. Do not move the ankle at all.',ko:'RICE 원칙을 따를 거예요. 첫째 — 안정. 발목을 전혀 움직이지 마세요.'},
+      {r:'n',en:'Second — Ice. 15 to 20 minutes. Tell me if it is too cold.',ko:'둘째 — 냉찜질. 15~20분. 너무 차가우면 말해요.'},
+      {r:'n',en:'Third — Compression. I will wrap it with a bandage.',ko:'셋째 — 압박. 붕대로 감을 거예요.'},
+      {r:'n',en:'Fourth — Elevation. Please keep your foot raised higher than your heart.',ko:'넷째 — 거상. 발을 심장보다 높게 올려요.'},
+      {r:'n',en:'No heat pack — only cold for the first 48 hours. Skip PE for 2 to 3 days.',ko:'온찜질 금지 — 48시간은 냉찜질만. 체육은 2~3일 쉬어요.'},
+    ]}]},
+  {id:'wound',icon:'🩹',color:'#7A5A3A',bg:'#FFF8F0',title:{ko:'상처/습윤드레싱',en:'Wound Care'},
+   scripts:[{label:{ko:'처치 안내',en:'Treatment'},tip:{ko:'생리식염수 세척→물기제거→습윤드레싱(2-3일). 고름+붓기→즉시 병원.',en:'Saline wash→dry→moist dressing(2-3 days). Pus+swelling→hospital immediately.'},
+    lines:[
+      {r:'n',en:'Let me see the wound. I will rinse it with saline solution first.',ko:'상처를 볼게요. 먼저 생리식염수로 씻을게요.'},
+      {r:'n',en:'This might sting a little — please bear with it.',ko:'약간 따가울 수 있어요 — 참아요.'},
+      {r:'n',en:'Now I will pat it dry carefully around the edges.',ko:'이제 가장자리를 조심스럽게 잘 닦을게요.'},
+      {r:'n',en:'I am going to apply a moist healing dressing — it is better than a regular bandage.',ko:'습윤 드레싱을 붙일 거예요 — 일반 반창고보다 좋아요.'},
+      {r:'s',en:'What is different about a moist dressing?',ko:'습윤 드레싱이 뭐가 달라요?'},
+      {r:'n',en:'The fluid from the wound contains growth factors — a moist dressing keeps it in and heals faster with less scarring.',ko:'진물 속에 성장 인자가 있어요 — 습윤 드레싱은 그걸 보존해서 빠르게, 흉터 없이 낫게 해줘요.'},
+      {r:'n',en:'Keep it on for 2 to 3 days. Peel slowly from the edges when you change it.',ko:'2~3일 유지해요. 교체할 때 가장자리부터 천천히 떼어내요.'},
+      {r:'n',en:'If it becomes red, hot, swollen, or has pus — that is infection. Come back immediately.',ko:'빨갛게 붓거나, 뜨겁거나, 고름이 있으면 — 감염이에요. 즉시 다시 와요.'},
+    ]}]},
+  {id:'constipation',icon:'😖',color:'#A07050',bg:'#FFF8F0',title:{ko:'하복부통증/변비',en:'Lower Pain/Constipation'},
+   scripts:[{label:{ko:'문진+처치',en:'Assessment+Treatment'},tip:{ko:'대변 규칙성 확인. 배꼽 시계방향 마사지. 수분↑+채소. 혈변→병원.',en:'Check bowel regularity. Clockwise belly massage. Water↑+vegetables. Blood in stool→hospital.'},
+    lines:[
+      {r:'n',en:'Where exactly does it hurt? Lower abdomen — below the belly button?',ko:'정확히 어디가 아파요? 아랫배 — 배꼽 아래요?'},
+      {r:'s',en:'Yes. It feels gassy and crampy. I have not gone to the bathroom in 4 days.',ko:'네. 가스 차고 쥐어짜는 느낌이에요. 4일째 화장실을 못 갔어요.'},
+      {r:'n',en:'Four days — that is constipation. Is your lower abdomen hard when I press here?',ko:'4일 — 변비예요. 여기 누르면 아랫배가 딱딱한가요?'},
+      {r:'n',en:'I will do a gentle clockwise massage around your belly button.',ko:'배꼽 주변을 시계 방향으로 살살 마사지할게요.'},
+      {r:'n',en:'Drink at least 8 glasses of water today. Eat vegetables and fruits when possible.',ko:'오늘 최소 8잔의 물을 마세요. 가능하면 채소와 과일을 드세요.'},
+      {r:'n',en:'When you feel the urge to go — do not ignore it. Go immediately.',ko:'변의를 느끼면 — 무시하지 마세요. 즉시 화장실에 가요.'},
+      {r:'n',en:'Light walking helps the colon move. Probiotics also help reduce gas.',ko:'가벼운 걷기가 대장 운동에 도움돼요. 유산균도 가스 줄이는 데 도움돼요.'},
+    ]}]},
+];
+
+// ═══════════════════════════
+// HOSPITAL SCENARIOS
+// ═══════════════════════════
+var HOSP_SC=[
+  {id:'reception',icon:'🏥',color:'#3A6A9A',bg:'#FFFFFF',title:{ko:'원무과',en:'Reception'},
+   scripts:[{label:{ko:'접수',en:'Check-in'},tip:{ko:'외국인은 여권+여행자보험 확인이 기본.',en:'Foreigner: always check passport + travel insurance.'},
+    lines:[
+      {r:'n',en:'Good morning! Welcome. How can I help you today?',ko:'안녕하세요! 어서 오세요. 어떻게 도와드릴까요?'},
+      {r:'s',en:'I need to see a doctor. I have a bad stomachache.',ko:'의사 선생님을 만나야 해요. 배가 너무 아파요.'},
+      {r:'n',en:'Do you have Korean health insurance or travel insurance?',ko:'한국 건강보험증이나 여행자 보험 있으세요?'},
+      {r:'s',en:'I have travel insurance. Here is my passport.',ko:'여행자 보험이 있어요. 여기 여권이요.'},
+      {r:'n',en:'Thank you. Please fill out this registration form.',ko:'감사해요. 이 접수 양식을 작성해 주세요.'},
+      {r:'s',en:'How long is the wait time?',ko:'대기 시간이 얼마나 걸려요?'},
+    ]}]},
+  {id:'internal',icon:'🩺',color:'#2A8A6A',bg:'#FFFFFF',title:{ko:'내과',en:'Internal Medicine'},
+   scripts:[{label:{ko:'진료',en:'Consultation'},tip:{ko:'흉통+호흡곤란→심전도 우선.',en:'Chest pain+breathlessness→prioritize ECG.'},
+    lines:[
+      {r:'n',en:'The doctor will see you now. Please come in.',ko:'이제 진료 받으실 수 있어요. 들어오세요.'},
+      {r:'s',en:'Thank you. I have had chest pain since yesterday.',ko:'감사해요. 어제부터 가슴이 아팠어요.'},
+      {r:'n',en:'Does the pain feel sharp or more like pressure?',ko:'통증이 날카로운가요, 압박감인가요?'},
+      {r:'s',en:'More like pressure. It spreads to my left shoulder.',ko:'압박감에 가깝고 왼쪽 어깨로 퍼져요.'},
+      {r:'n',en:'I will check your blood pressure and oxygen level right away.',ko:'바로 혈압과 산소 포화도를 측정할게요.'},
+      {r:'s',en:'Is it serious?',ko:'심각한가요?'},
+    ]}]},
+  {id:'pediatrics',icon:'👶',color:'#D47A3A',bg:'#FFFFFF',title:{ko:'소아과',en:'Pediatrics'},
+   scripts:[{label:{ko:'소아 진료',en:'Child Visit'},tip:{ko:'소아 38도 이상→즉시 진료.',en:'Pediatric 38°C+→immediate attention.'},
+    lines:[
+      {r:'n',en:"Hello! Please come in. What is this little one's name?",ko:'안녕하세요! 들어오세요. 이 아이의 이름이 뭐예요?'},
+      {r:'s',en:'Her name is Emma. She has had a high fever since last night.',ko:'Emma예요. 어젯밤부터 열이 많이 났어요.'},
+      {r:'n',en:'Let me check her temperature. Any other symptoms?',ko:'체온을 재볼게요. 다른 증상도 있나요?'},
+      {r:'s',en:'She vomited twice and has a rash on her stomach.',ko:'두 번 토했고 배에 발진이 생겼어요.'},
+      {r:'n',en:'Is she allergic to any medications?',ko:'약물 알러지 있나요?'},
+      {r:'s',en:'No known allergies.',ko:'알려진 알러지 없어요.'},
+    ]}]},
+  {id:'orthopedics',icon:'🦴',color:'#7A5AAA',bg:'#FFFFFF',title:{ko:'정형외과',en:'Orthopedics'},
+   scripts:[{label:{ko:'진료',en:'Consultation'},tip:{ko:'골절 의심→X-ray 전 부목.',en:'Suspected fracture→splint before X-ray.'},
+    lines:[
+      {r:'n',en:'Hello. What happened to your arm?',ko:'안녕하세요. 팔이 어떻게 된 거예요?'},
+      {r:'s',en:'I fell off my bicycle and landed on my wrist.',ko:'자전거에서 떨어져 손목으로 착지했어요.'},
+      {r:'n',en:'Can you try to move your fingers slowly?',ko:'손가락을 천천히 움직여 볼 수 있어요?'},
+      {r:'s',en:'Barely. The pain is about a 9.',ko:'겨우요. 통증은 9 정도예요.'},
+      {r:'n',en:'We need an X-ray immediately.',ko:'즉시 X레이가 필요해요.'},
+      {r:'s',en:'Will I need surgery?',ko:'수술이 필요할까요?'},
+    ]}]},
+  {id:'cardiology',icon:'❤️',color:'#AA2A2A',bg:'#FFFFFF',title:{ko:'심장내과',en:'Cardiology'},
+   scripts:[{label:{ko:'진료',en:'Consultation'},tip:{ko:'부정맥→홀터 심전도 안내.',en:'Arrhythmia→mention Holter monitoring.'},
+    lines:[
+      {r:'n',en:'Please sit here. The doctor will examine your heart.',ko:'여기 앉으세요. 심장을 검진할 거예요.'},
+      {r:'s',en:'I have been having irregular heartbeats.',ko:'심장이 불규칙하게 뛰어요.'},
+      {r:'n',en:'How many times a day? Does it wake you at night?',ko:'하루에 몇 번이요? 밤에 잠을 깨우나요?'},
+      {r:'s',en:'About 3 to 5 times. Yes, twice last night.',ko:'하루에 3~5번. 어젯밤에 두 번 깼어요.'},
+      {r:'n',en:'I will do an ECG right now. Please lie down and stay still.',ko:'지금 심전도 검사를 할게요. 누워서 가만히 계세요.'},
+      {r:'s',en:'Is this dangerous?',ko:'위험한가요?'},
+    ]}]},
+  {id:'anesthesia',icon:'💉',color:'#5A6A8A',bg:'#FFFFFF',title:{ko:'마취과',en:'Anesthesia'},
+   scripts:[{label:{ko:'수술 전',en:'Pre-op'},tip:{ko:'NPO 지시→서면으로도 전달.',en:'NPO instructions→also give in writing.'},
+    lines:[
+      {r:'n',en:'Hello. I am the anesthesiologist. I will explain your anesthesia.',ko:'안녕하세요. 저는 마취과 의사예요. 마취에 대해 설명할게요.'},
+      {r:'s',en:'Will I be completely unconscious?',ko:'완전히 의식을 잃게 되나요?'},
+      {r:'n',en:'Yes, general anesthesia. You will feel nothing during surgery.',ko:'네, 전신 마취예요. 수술 중에 아무것도 못 느낄 거예요.'},
+      {r:'s',en:'Is it safe?',ko:'안전한가요?'},
+      {r:'n',en:'Very safe. Any allergies to medicines?',ko:'아주 안전해요. 약에 알러지가 있나요?'},
+      {r:'s',en:'No known allergies. When should I stop eating?',ko:'알려진 알러지 없어요. 언제부터 금식해야 해요?'},
+    ]}]},
+  {id:'obgyn',icon:'🌸',color:'#C45A8A',bg:'#FFFFFF',title:{ko:'산부인과',en:'OB/GYN'},
+   scripts:[{label:{ko:'진료',en:'Consultation'},tip:{ko:'비밀보장 먼저 안내.',en:'Always assure full confidentiality first.'},
+    lines:[
+      {r:'n',en:'Please come in. Everything you tell me is completely private.',ko:'들어오세요. 여기서 하는 모든 이야기는 완전히 비밀이에요.'},
+      {r:'s',en:'I think I might be pregnant.',ko:'임신한 것 같아요.'},
+      {r:'n',en:'When was your last period?',ko:'마지막 생리가 언제였어요?'},
+      {r:'s',en:'About 6 or 7 weeks ago.',ko:'6~7주 전이요.'},
+      {r:'n',en:'I will arrange a pregnancy test right away.',ko:'바로 임신 검사를 준비해 드릴게요.'},
+      {r:'s',en:'I have been feeling nauseous and very tired.',ko:'메스껍고 아주 피곤해요.'},
+    ]}]},
+  {id:'outpatient',icon:'🚶',color:'#4A8A5A',bg:'#FFFFFF',title:{ko:'외래',en:'Outpatient'},
+   scripts:[{label:{ko:'외래 안내',en:'Follow-up'},tip:{ko:'약 복용 순응도 매 외래 확인.',en:'Always check medication compliance at every visit.'},
+    lines:[
+      {r:'n',en:'Hello again. This is your follow-up appointment. How have you been?',ko:'다시 오셨네요. 외래 추적 진료예요. 요즘 어떠세요?'},
+      {r:'s',en:'A bit better, but I still get tired easily.',ko:'좀 나은데 아직 쉽게 피곤해요.'},
+      {r:'n',en:'Have you been taking your medicine every day?',ko:'매일 약 드시고 있어요?'},
+      {r:'s',en:'Yes, every morning. But I sometimes forget the evening dose.',ko:'네 매일 아침이요. 저녁 약은 가끔 잊어요.'},
+      {r:'n',en:'Please try not to miss the evening dose. Any side effects?',ko:'저녁 약은 빠트리지 않도록 하세요. 부작용은 있었나요?'},
+      {r:'s',en:'Some mild nausea at first, but it is gone now.',ko:'처음에 약간 메스꺼웠는데 이제 괜찮아요.'},
+    ]}]},
+];
+
+// ═══════════════════════════
+// EMERGENCY
+// ═══════════════════════════
+var EMERG=[
+  {id:'collapse',icon:'🚨',color:'#CC2222',bg:'#FFF0F0',title:{ko:'쓰러진 환자 ABC',en:'Collapsed Patient - ABC'},
+   scripts:[
+     {label:{ko:'1단계: 의식확인',en:'Step1: Consciousness'},tip:{ko:'반응 없으면 즉시 119. 혼자면 큰소리로 도움 요청.',en:'No response→call 119 immediately.'},
+      lines:[
+        {r:'n',en:'Hello! Can you hear me? Are you okay?',ko:'여보세요! 들려요? 괜찮아요?'},
+        {r:'n',en:'No response — Call 119 now! Someone get the AED!',ko:'반응 없음 — 지금 119 신고! 누군가 AED 가져와요!'},
+        {r:'s',en:'(Patient regains consciousness) Where… where am I?',ko:'(환자 의식 회복) 어… 여기가 어디예요?'},
+        {r:'n',en:'You fainted. I am a nurse. You are safe now. Stay still.',ko:'쓰러지셨어요. 저는 간호사예요. 이제 안전해요. 가만히 계세요.'},
+      ]},
+     {label:{ko:'2단계: ABC 체크',en:'Step2: ABC Check'},tip:{ko:'A=Airway(기도) B=Breathing(호흡) C=Circulation(순환)',en:'A=Airway B=Breathing C=Circulation'},
+      lines:[
+        {r:'n',en:'A — Airway: Is the airway clear? Tilt the head back gently.',ko:'A — 기도: 기도가 열려 있나요? 머리를 살짝 뒤로 젖혀요.'},
+        {r:'n',en:'B — Breathing: Look, listen, and feel for breathing.',ko:'B — 호흡: 호흡을 보고, 듣고, 느껴요.'},
+        {r:'n',en:'C — Circulation: Check for pulse at the neck.',ko:'C — 순환: 목에서 맥박을 확인해요.'},
+        {r:'s',en:'I can breathe. My heart is beating.',ko:'숨을 쉴 수 있어요. 심장이 뛰어요.'},
+        {r:'n',en:'Good. Breathing and pulse present. Continue monitoring.',ko:'좋아요. 호흡 있음. 맥박 있음. 계속 모니터링할게요.'},
+      ]},
+     {label:{ko:'3단계: 지남력',en:'Step3: Orientation'},tip:{ko:'시간·장소·사람 세 가지 확인.',en:'Check Time, Place, Person.'},
+      lines:[
+        {r:'n',en:"I need to check your orientation. What is today's date?",ko:'지남력을 확인할게요. 오늘이 몇 월 며칠이에요?'},
+        {r:'s',en:'I am not sure of the date.',ko:'날짜를 잘 모르겠어요.'},
+        {r:'n',en:'Where are you right now? What building is this?',ko:'지금 어디에 계세요? 여기가 어떤 건물이에요?'},
+        {r:'s',en:'I think I am in the hospital. Or school?',ko:'병원인 것 같아요. 아니면 학교?'},
+        {r:'n',en:'What is your name? Do you remember who you are?',ko:'이름이 뭐예요? 자신이 누군지 기억하세요?'},
+      ]},
+     {label:{ko:'4단계: 처치',en:'Step4: Treatment'},tip:{ko:'다리올리기+혈압+체온 측정. 119 올 때까지 보건실 이동.',en:'Elevate legs+blood pressure+temperature. Move to nurse room until 119 arrives.'},
+      lines:[
+        {r:'n',en:'Please raise your legs — like this. It helps blood flow to your brain.',ko:'다리를 올려주세요 — 이렇게요. 뇌로 혈액이 잘 가게 해줘요.'},
+        {r:'n',en:'I will check your blood pressure now. Please stay still.',ko:'지금 혈압을 재겠습니다. 가만히 계세요.'},
+        {r:'n',en:'I will also take your temperature.',ko:'체온도 재겠습니다.'},
+        {r:'n',en:"We will move you to the nurse's room to rest until 119 arrives.",ko:'119가 올 때까지 보건실로 이동해서 쉬겠습니다.'},
+        {r:'s',en:'Do I really need to go to the hospital?',ko:'정말 병원에 가야 하나요?'},
+        {r:'n',en:'Yes. Fainting needs a proper medical evaluation.',ko:'네. 실신은 제대로 된 의학적 평가가 필요해요.'},
+      ]},
+   ]},
+  {id:'cpr',icon:'💓',color:'#AA0000',bg:'#FFF0F0',title:{ko:'심정지 CPR/AED',en:'Cardiac Arrest CPR/AED'},
+   scripts:[{label:{ko:'CPR 시작',en:'Start CPR'},tip:{ko:'심정지→즉시 CPR. 100-120회/분. 119+AED.',en:'Cardiac arrest→CPR immediately. 100-120/min. 119+AED.'},
+    lines:[
+      {r:'n',en:'No pulse! No breathing! Starting CPR now!',ko:'맥박 없음! 호흡 없음! 지금 CPR 시작합니다!'},
+      {r:'n',en:'Call 119 immediately! Someone get the AED!',ko:'즉시 119 신고해요! 누군가 AED 가져와요!'},
+      {r:'n',en:'Hands in the center of the chest. Push hard and fast.',ko:'손을 가슴 중앙에 놓아요. 강하고 빠르게 누르세요.'},
+      {r:'n',en:'30 compressions then 2 rescue breaths.',ko:'30번 압박, 그 다음 인공호흡 2번.'},
+      {r:'n',en:'AED is here — turn it on and follow the voice instructions.',ko:'AED 왔어요 — 켜고 음성 안내를 따라하세요.'},
+      {r:'n',en:'Stand clear! Do not touch the patient!',ko:'물러서세요! 환자에 손대지 마세요!'},
+    ]}]},
+];
+
+// ═══════════════════════════
+// QUICK PHRASES
+// ═══════════════════════════
+var QUICK_PH=[
+  {section:'🔴 응급',items:[
+    {ko:'119에 전화해요!',en:'Call 119 immediately!'},
+    {ko:'AED를 가져와요!',en:'Get the AED now!'},
+    {ko:'움직이지 마세요!',en:'Do not move!'},
+    {ko:'CPR 시작합니다!',en:'Starting CPR now!'},
+    {ko:'기도를 확인해요.',en:'Check the airway.'},
+    {ko:'맥박이 있어요?',en:'Is there a pulse?'},
+    {ko:'의식이 있어요?',en:'Are you conscious?'},
+    {ko:'다리를 올려주세요.',en:'Please raise your legs.'},
+  ]},
+  {section:'🩺 문진',items:[
+    {ko:'어디가 아파요?',en:'Where does it hurt?'},
+    {ko:'언제부터요?',en:'When did it start?'},
+    {ko:'오늘 아침 밥 먹었어요?',en:'Did you eat breakfast today?'},
+    {ko:'어제 뭐 먹었어요?',en:'What did you eat yesterday?'},
+    {ko:'마지막 식사가 몇 시예요?',en:'What time was your last meal?'},
+    {ko:'대변이 규칙적으로 나오나요?',en:'Is your bowel movement regular?'},
+    {ko:'마지막 대변이 언제예요?',en:'When was your last bowel movement?'},
+    {ko:'타는 느낌인가요?',en:'Does it feel like burning?'},
+    {ko:'쥐어짜는 느낌인가요?',en:'Does it feel like cramping?'},
+    {ko:'메스껍나요?',en:'Do you feel nauseous?'},
+    {ko:'어지럽나요?',en:'Do you feel dizzy?'},
+    {ko:'알레르기 있나요?',en:'Do you have any allergies?'},
+  ]},
+  {section:'💊 처치',items:[
+    {ko:'여기 누워서 쉬세요.',en:'Please lie down here and rest.'},
+    {ko:'이 약을 물과 함께 드세요.',en:'Please take this medicine with water.'},
+    {ko:'미지근한 물을 천천히 마세요.',en:'Please drink warm water slowly.'},
+    {ko:'핫팩을 아랫배에 대세요.',en:'Apply the heat pack to your lower abdomen.'},
+    {ko:'아이스팩을 댈게요. 15~20분.',en:'I will apply an ice pack. 15 to 20 minutes.'},
+    {ko:'발을 심장보다 높게 올려요.',en:'Please elevate your foot above your heart.'},
+    {ko:'배를 시계 방향으로 마사지할게요.',en:'I will massage your abdomen clockwise.'},
+    {ko:'혈압 재겠습니다.',en:'I will check your blood pressure.'},
+    {ko:'체온 재겠습니다.',en:'I will take your temperature.'},
+    {ko:'식후 30분은 눕지 마세요.',en:'Do not lie down for 30 minutes after eating.'},
+    {ko:'마스크를 꼭 착용해요.',en:'Please wear a mask at all times.'},
+  ]},
+  {section:'📋 안내',items:[
+    {ko:'부모님께 연락할게요.',en:'I will contact your parents.'},
+    {ko:'집에 가서 쉬는 게 좋겠어요.',en:'I recommend you go home and rest.'},
+    {ko:'병원에 가보는 게 좋겠어요.',en:'Please visit a doctor.'},
+    {ko:'더 나빠지면 바로 다시 와요.',en:'Come back immediately if it gets worse.'},
+    {ko:'오늘 체육 수업 빠져도 돼요.',en:'You may skip PE class today.'},
+    {ko:'급식실에서 가림막 있는 곳에 앉아요.',en:'Please sit where there is a partition.'},
+    {ko:'독감/코로나 검사시 출결 인정이에요.',en:'Getting tested for flu/COVID is excused absence.'},
+    {ko:'진료 확인서를 학교에 제출해 주세요.',en:'Please submit a medical certificate to school.'},
+  ]},
+];
+
+// ═══════════════════════════
+// TRAVEL ENGLISH SCENARIOS
+// ═══════════════════════════
+var TRAVEL_COUNTRIES=['전체','미국','영국','호주','노르웨이','일본'];
+var TRAVEL_SC=[
+  {id:'t_checkin',icon:'🛫',color:'#3A7AC0',bg:'#F0F6FF',country:'전체',title:{ko:'공항 체크인',en:'Airport Check-in'},
+   scripts:[{label:{ko:'체크인',en:'Check-in'},tip:{ko:'여권+이티켓 미리 준비. 창가/복도석 미리 말하기.',en:'Have passport+e-ticket ready. State window/aisle preference early.'},
+    lines:[
+      {r:'n',en:'Good morning! May I see your passport and ticket, please?',ko:'안녕하세요! 여권과 항공권을 보여주시겠어요?'},
+      {r:'s',en:"Here you are. I'd like a window seat, if possible.",ko:'여기 있어요. 가능하면 창가 자리로 부탁드려요.'},
+      {r:'n',en:'How many bags would you like to check in today?',ko:'오늘 위탁 수하물은 몇 개인가요?'},
+      {r:'s',en:'Just one suitcase. Is it within the weight limit?',ko:'캐리어 하나요. 무게 제한 안에 드나요?'},
+      {r:'n',en:'It is 21 kilograms — that is fine. Here is your boarding pass.',ko:'21킬로그램이네요 — 괜찮아요. 여기 탑승권입니다.'},
+      {r:'s',en:'What time does boarding begin?',ko:'탑승은 몇 시부터인가요?'},
+    ]}]},
+  {id:'t_security',icon:'🛂',color:'#4A6AA0',bg:'#F0F4FF',country:'전체',title:{ko:'보안검색',en:'Security Screening'},
+   scripts:[{label:{ko:'검색대',en:'Screening'},tip:{ko:'액체류 100ml 이하, 노트북·전자기기는 트레이에 따로.',en:'Liquids under 100ml, laptops/electronics in a separate tray.'},
+    lines:[
+      {r:'n',en:'Please remove your laptop and place it in a separate tray.',ko:'노트북을 꺼내서 별도 트레이에 놓아주세요.'},
+      {r:'n',en:'Take off your jacket and belt, and empty your pockets.',ko:'재킷과 벨트를 벗고, 주머니를 비워주세요.'},
+      {r:'s',en:'Do I need to take off my shoes too?',ko:'신발도 벗어야 하나요?'},
+      {r:'n',en:'Only if asked. Please walk through the metal detector now.',ko:'요청받을 때만요. 지금 금속 탐지기를 통과해 주세요.'},
+      {r:'s',en:'I have a bottle of water — is that a problem?',ko:'물 한 병이 있는데, 문제가 될까요?'},
+      {r:'n',en:'Liquids over 100ml are not allowed. Please drink it or discard it here.',ko:'100ml 이상 액체는 반입 불가예요. 여기서 드시거나 버려주세요.'},
+    ]}]},
+  {id:'t_immigration',icon:'🛃',color:'#5A5AA0',bg:'#F3F0FF',country:'전체',title:{ko:'입국심사',en:'Immigration'},
+   scripts:[{label:{ko:'심사',en:'Interview'},tip:{ko:'방문 목적·기간·숙소 주소를 명확히 답변.',en:'Answer purpose, length of stay, and address clearly.'},
+    lines:[
+      {r:'n',en:"What is the purpose of your visit?",ko:'방문 목적이 무엇인가요?'},
+      {r:'s',en:"I'm here for tourism. I'll be staying for 10 days.",ko:'관광차 왔어요. 10일 동안 머물 거예요.'},
+      {r:'n',en:'Where will you be staying during your trip?',ko:'여행 중에는 어디서 머무시나요?'},
+      {r:'s',en:'At a hotel in the city center. Here is my booking confirmation.',ko:'시내 호텔에서요. 여기 예약 확인서예요.'},
+      {r:'n',en:'Do you have a return ticket?',ko:'돌아가는 항공권이 있나요?'},
+      {r:'s',en:'Yes, here it is on my phone.',ko:'네, 여기 휴대폰에 있어요.'},
+    ]}]},
+  {id:'t_customs',icon:'📦',color:'#6A5A90',bg:'#F5F0FA',country:'전체',title:{ko:'세관',en:'Customs'},
+   scripts:[{label:{ko:'신고',en:'Declaration'},tip:{ko:'현금 1만불 이상·농축산물·면세 초과 물품은 반드시 신고.',en:'Declare cash over $10,000, food items, and goods over duty-free limit.'},
+    lines:[
+      {r:'n',en:'Do you have anything to declare?',ko:'신고할 물건이 있나요?'},
+      {r:'s',en:'No, just personal belongings and some souvenirs.',ko:'아니요, 개인 소지품이랑 기념품 몇 개뿐이에요.'},
+      {r:'n',en:'Are you carrying any food, plants, or more than $10,000 in cash?',ko:'음식, 식물, 혹은 1만 달러 이상의 현금을 소지하고 계신가요?'},
+      {r:'s',en:'No, none of those.',ko:'아니요, 없어요.'},
+      {r:'n',en:'Please place your bag on the belt for a quick scan.',ko:'가방을 벨트 위에 올려서 간단히 검사할게요.'},
+      {r:'n',en:'Thank you. Enjoy your stay.',ko:'감사합니다. 즐거운 여행 되세요.'},
+    ]}]},
+  {id:'t_hotelin',icon:'🏨',color:'#C0803A',bg:'#FFF6EC',country:'전체',title:{ko:'호텔 체크인',en:'Hotel Check-in'},
+   scripts:[{label:{ko:'체크인',en:'Check-in'},tip:{ko:'예약자명·바우처·신분증·보증금(카드) 필요.',en:'Have reservation name, voucher, ID, and a card for deposit.'},
+    lines:[
+      {r:'n',en:'Welcome! Do you have a reservation with us?',ko:'어서 오세요! 예약하셨나요?'},
+      {r:'s',en:"Yes, under the name Kim, for two nights.",ko:'네, Kim이라는 이름으로 2박 예약했어요.'},
+      {r:'n',en:'May I see your passport and a credit card for incidentals?',ko:'여권과 부대비용용 신용카드를 보여주시겠어요?'},
+      {r:'s',en:'Here you go. What time is check-out?',ko:'여기요. 체크아웃은 몇 시인가요?'},
+      {r:'n',en:'Check-out is at 11 AM. Your room is on the 5th floor, room 512.',ko:'체크아웃은 오전 11시예요. 방은 5층 512호입니다.'},
+      {r:'s',en:'Is breakfast included?',ko:'조식이 포함되나요?'},
+    ]}]},
+  {id:'t_hotelout',icon:'🧳',color:'#B87A2A',bg:'#FFF4E5',country:'전체',title:{ko:'호텔 체크아웃',en:'Hotel Check-out'},
+   scripts:[{label:{ko:'체크아웃',en:'Check-out'},tip:{ko:'미니바·룸서비스 사용 여부 확인 후 최종 결제.',en:'Confirm minibar/room service usage before final payment.'},
+    lines:[
+      {r:'s',en:"I'd like to check out, please. Room 512.",ko:'체크아웃 하려고요. 512호예요.'},
+      {r:'n',en:'Did you use anything from the minibar?',ko:'미니바를 이용하셨나요?'},
+      {r:'s',en:'No, I did not use it.',ko:'아니요, 사용하지 않았어요.'},
+      {r:'n',en:'Your total comes to $320, already charged to your card. Here is the receipt.',ko:'총액은 320달러이고, 카드로 이미 결제되었어요. 여기 영수증입니다.'},
+      {r:'s',en:'Could you keep my luggage until 3 PM?',ko:'짐을 3시까지 맡아주실 수 있나요?'},
+      {r:'n',en:'Of course, please leave it at the front desk.',ko:'물론이죠, 프런트에 맡겨주세요.'},
+    ]}]},
+  {id:'t_complaint',icon:'😤',color:'#C0503A',bg:'#FFF0EC',country:'전체',title:{ko:'호텔 컴플레인',en:'Hotel Complaint'},
+   scripts:[{label:{ko:'불편사항',en:'Complaint'},tip:{ko:'침착하게 구체적 문제+원하는 해결책을 함께 말하기.',en:'Stay calm, state the specific problem and your desired solution.'},
+    lines:[
+      {r:'s',en:'Excuse me, the air conditioner in my room is not working.',ko:'실례합니다, 방 에어컨이 작동하지 않아요.'},
+      {r:'n',en:"I'm very sorry to hear that. What is your room number?",ko:'정말 죄송합니다. 방 번호가 어떻게 되시나요?'},
+      {r:'s',en:'Room 708. Also, it was quite noisy last night.',ko:'708호예요. 그리고 어젯밤엔 꽤 시끄러웠어요.'},
+      {r:'n',en:"I'll send an engineer right away, and I can offer you a room change or a discount.",ko:'바로 기술자를 보내드릴게요, 방 변경이나 할인도 안내해 드릴 수 있어요.'},
+      {r:'s',en:"I'd prefer a quieter room, please.",ko:'조용한 방으로 바꿔주시면 좋겠어요.'},
+      {r:'n',en:'Of course. We will move you to room 902 right away.',ko:'네, 바로 902호로 옮겨드리겠습니다.'},
+    ]}]},
+  {id:'t_reserve',icon:'📅',color:'#3A9A6A',bg:'#EEFAF3',country:'전체',title:{ko:'식당 예약',en:'Restaurant Reservation'},
+   scripts:[{label:{ko:'예약',en:'Reservation'},tip:{ko:'인원·시간·특별 요청(창가석 등) 순서로 말하기.',en:'State party size, time, then special requests.'},
+    lines:[
+      {r:'s',en:"I'd like to make a reservation for tonight, please.",ko:'오늘 저녁 예약을 하고 싶어요.'},
+      {r:'n',en:'Certainly, for how many people and what time?',ko:'물론이죠, 몇 분이시고 몇 시로 해드릴까요?'},
+      {r:'s',en:'Four people, at 7 PM.',ko:'네 명이고, 저녁 7시요.'},
+      {r:'n',en:'We have a table available. Any dietary restrictions or a table preference?',ko:'테이블이 가능해요. 식단 제한이나 선호하는 자리가 있나요?'},
+      {r:'s',en:'A window table would be nice, and one of us is vegetarian.',ko:'창가 자리면 좋겠고, 한 명은 채식주의자예요.'},
+      {r:'n',en:'Noted. We will have a vegetarian menu ready for you.',ko:'확인했습니다. 채식 메뉴도 준비해 드릴게요.'},
+    ]}]},
+  {id:'t_order',icon:'🍽️',color:'#2A8A5A',bg:'#EAFAF0',country:'전체',title:{ko:'식당 주문',en:'Ordering Food'},
+   scripts:[{label:{ko:'주문',en:'Order'},tip:{ko:'조리 정도·매운맛·알레르기는 꼭 미리 말하기.',en:'Always mention doneness, spice level, and allergies in advance.'},
+    lines:[
+      {r:'n',en:'Are you ready to order, or do you need a few more minutes?',ko:'주문하시겠어요, 아니면 시간이 더 필요하신가요?'},
+      {r:'s',en:"I'll have the grilled salmon, and a Caesar salad to start.",ko:'그릴 연어 주세요, 그리고 시작으로 시저 샐러드요.'},
+      {r:'n',en:'How would you like your steak cooked — for your friend?',ko:'친구분 스테이크는 어떻게 익혀 드릴까요?'},
+      {r:'s',en:'Medium rare, please. Also, is there any peanut in this dish?',ko:'미디엄 레어로 부탁해요. 그리고 이 요리에 땅콩이 들어가나요?'},
+      {r:'n',en:'No peanuts, but it does contain shellfish.',ko:'땅콩은 없지만, 갑각류가 들어가요.'},
+      {r:'s',en:"That's fine, I'm not allergic to that. Thank you.",ko:'괜찮아요, 그건 알레르기 없어요. 감사합니다.'},
+    ]}]},
+  {id:'t_pay',icon:'💳',color:'#1A8A6A',bg:'#E8FAF2',country:'전체',title:{ko:'식당 계산',en:'Paying the Bill'},
+   scripts:[{label:{ko:'계산',en:'Payment'},tip:{ko:'더치페이는 "separate checks", 팁 문화는 나라마다 다름.',en:'Split bill: "separate checks". Tipping customs vary by country.'},
+    lines:[
+      {r:'s',en:'Could we get the check, please?',ko:'계산서 좀 주시겠어요?'},
+      {r:'n',en:'Of course. Would you like separate checks or one bill together?',ko:'물론이죠. 각자 계산할까요, 아니면 한 번에 계산할까요?'},
+      {r:'s',en:'Separate checks, please. And is service charge included?',ko:'각자 계산할게요. 그리고 봉사료가 포함되어 있나요?'},
+      {r:'n',en:'Yes, a 10% service charge is already included.',ko:'네, 10% 봉사료가 이미 포함되어 있어요.'},
+      {r:'s',en:'Great, do you accept credit cards?',ko:'좋아요, 신용카드 되나요?'},
+      {r:'n',en:'Yes, we accept all major cards.',ko:'네, 모든 주요 카드 다 가능해요.'},
+    ]}]},
+  {id:'t_cafe',icon:'☕',color:'#8A5A3A',bg:'#F8F0E8',country:'전체',title:{ko:'카페',en:'Cafe Order'},
+   scripts:[{label:{ko:'주문',en:'Order'},tip:{ko:'사이즈·매장/포장(for here/to go)을 먼저 확인.',en:'Confirm size and for here/to go first.'},
+    lines:[
+      {r:'n',en:'Hi there, what can I get started for you?',ko:'안녕하세요, 무엇을 도와드릴까요?'},
+      {r:'s',en:"I'll have a medium iced latte, oat milk please.",ko:'미디엄 아이스 라떼로 주세요, 귀리우유로요.'},
+      {r:'n',en:'For here or to go?',ko:'매장에서 드시나요, 포장이신가요?'},
+      {r:'s',en:'To go, please. And could I add an extra shot?',ko:'포장이요. 그리고 샷 하나 추가할 수 있나요?'},
+      {r:'n',en:'Sure, that will be $6.50. Anything else?',ko:'네, 총 6달러 50센트예요. 더 필요하신 거 있나요?'},
+      {r:'s',en:"That's all, thank you.",ko:'그게 다예요, 감사합니다.'},
+    ]}]},
+  {id:'t_taxi',icon:'🚕',color:'#D4A020',bg:'#FFFBE8',country:'전체',title:{ko:'택시',en:'Taxi'},
+   scripts:[{label:{ko:'승차',en:'Taking a Taxi'},tip:{ko:'목적지 주소+대략적 소요시간·요금 미리 확인.',en:'Confirm destination address plus estimated time/fare.'},
+    lines:[
+      {r:'s',en:'Hello, could you take me to this address, please?',ko:'안녕하세요, 이 주소로 가주시겠어요?'},
+      {r:'n',en:'Sure. That should take about 20 minutes.',ko:'네. 약 20분 정도 걸릴 거예요.'},
+      {r:'s',en:'Roughly how much will the fare be?',ko:'요금은 대략 얼마 정도 나올까요?'},
+      {r:'n',en:'Around 25 dollars, depending on traffic.',ko:'교통 상황에 따라 25달러 정도요.'},
+      {r:'s',en:'Could you please pull over here? This is fine.',ko:'여기서 세워주시겠어요? 여기면 됩니다.'},
+      {r:'n',en:'Sure. That will be 23 dollars, please.',ko:'네. 23달러입니다.'},
+    ]}]},
+  {id:'t_subway',icon:'🚇',color:'#3A6A9A',bg:'#EFF5FF',country:'전체',title:{ko:'지하철',en:'Subway/Metro'},
+   scripts:[{label:{ko:'길안내',en:'Directions'},tip:{ko:'노선 환승은 "transfer to line", 종점 방향으로 확인.',en:'Transfers: "transfer to line ___". Confirm direction by end station.'},
+    lines:[
+      {r:'s',en:'Excuse me, which line should I take to get to the museum?',ko:'실례합니다, 박물관에 가려면 몇 호선을 타야 하나요?'},
+      {r:'n',en:'Take the blue line and transfer to the red line at Central Station.',ko:'파란색 노선을 타고 센트럴 역에서 빨간색 노선으로 환승하세요.'},
+      {r:'s',en:'How many stops is that from here?',ko:'여기서 몇 정거장인가요?'},
+      {r:'n',en:'About five stops, then two more after the transfer.',ko:'약 다섯 정거장이고, 환승 후 두 정거장 더요.'},
+      {r:'s',en:'Do I need a paper ticket or a card?',ko:'종이 티켓이 필요한가요, 카드가 필요한가요?'},
+      {r:'n',en:'A rechargeable card is easiest — you can buy one at the machine.',ko:'충전식 카드가 가장 편해요 — 자판기에서 구매할 수 있어요.'},
+    ]}]},
+  {id:'t_directions',icon:'🗺️',color:'#4A8A9A',bg:'#EEF9FA',country:'전체',title:{ko:'길묻기',en:'Asking Directions'},
+   scripts:[{label:{ko:'길찾기',en:'Finding the Way'},tip:{ko:'모르면 "I\'m not sure"로 솔직히, 랜드마크 기준 설명 요청.',en:'If unsure, say so honestly; ask for landmark-based directions.'},
+    lines:[
+      {r:'s',en:'Excuse me, how do I get to the nearest pharmacy?',ko:'실례합니다, 가장 가까운 약국까지 어떻게 가나요?'},
+      {r:'n',en:'Go straight two blocks, then turn left at the coffee shop.',ko:'두 블록 직진하시고, 커피숍에서 왼쪽으로 도세요.'},
+      {r:'s',en:'Is it within walking distance?',ko:'걸어서 갈 수 있는 거리인가요?'},
+      {r:'n',en:'Yes, about a 10-minute walk from here.',ko:'네, 여기서 걸어서 약 10분이요.'},
+      {r:'s',en:"Thank you so much. I'm not from around here.",ko:'정말 감사합니다. 이 근처에 사는 사람이 아니라서요.'},
+      {r:'n',en:'No problem at all — enjoy your visit!',ko:'전혀 문제없어요 — 즐거운 방문 되세요!'},
+    ]}]},
+  {id:'t_shopping',icon:'🛍️',color:'#AA4A8A',bg:'#FDF0F8',country:'전체',title:{ko:'쇼핑',en:'Shopping'},
+   scripts:[{label:{ko:'쇼핑',en:'Shopping'},tip:{ko:'사이즈·색상 요청 및 피팅룸 위치 물어보기.',en:'Ask for size/color and fitting room location.'},
+    lines:[
+      {r:'s',en:'Excuse me, do you have this in a medium?',ko:'실례합니다, 이거 미디엄 사이즈 있나요?'},
+      {r:'n',en:'Let me check. Yes, we have it in medium and large.',ko:'확인해 볼게요. 네, 미디엄이랑 라지 있어요.'},
+      {r:'s',en:'Great, could I try it on? Where is the fitting room?',ko:'좋아요, 입어봐도 될까요? 피팅룸이 어디예요?'},
+      {r:'n',en:"It's right over there, to your left.",ko:'저쪽이요, 왼쪽에 있어요.'},
+      {r:'s',en:"This fits perfectly. I'll take it.",ko:'딱 맞아요. 이걸로 살게요.'},
+      {r:'n',en:'Great choice! Would you like a bag for that?',ko:'좋은 선택이에요! 가방에 담아드릴까요?'},
+    ]}]},
+  {id:'t_refund',icon:'💰',color:'#8A4A4A',bg:'#FBF0F0',country:'전체',title:{ko:'환불/교환',en:'Refund/Exchange'},
+   scripts:[{label:{ko:'환불',en:'Refund'},tip:{ko:'영수증 지참 필수, 환불 정책(기간) 확인.',en:'Bring the receipt; check the return policy window.'},
+    lines:[
+      {r:'s',en:"I'd like to return this, please. It doesn't fit.",ko:'이거 환불하고 싶어요. 사이즈가 안 맞아요.'},
+      {r:'n',en:'Do you have the receipt with you?',ko:'영수증 가지고 계세요?'},
+      {r:'s',en:'Yes, here it is. I bought it two days ago.',ko:'네, 여기요. 이틀 전에 샀어요.'},
+      {r:'n',en:'That is within our 30-day return policy. Refund or exchange?',ko:'저희 30일 환불 정책 안에 있네요. 환불로 해드릴까요, 교환으로 해드릴까요?'},
+      {r:'s',en:"I'd like a size large instead, please.",ko:'대신 라지 사이즈로 교환하고 싶어요.'},
+      {r:'n',en:'No problem, here is the large. Anything else?',ko:'문제없어요, 여기 라지요. 더 필요하신 거 있나요?'},
+    ]}]},
+  {id:'t_sightseeing',icon:'🎫',color:'#3A8A8A',bg:'#EDFAFA',country:'전체',title:{ko:'관광/티켓',en:'Sightseeing/Tickets'},
+   scripts:[{label:{ko:'입장권',en:'Tickets'},tip:{ko:'학생/시니어 할인, 통합권(패스) 여부 확인.',en:'Ask about student/senior discounts and combo passes.'},
+    lines:[
+      {r:'s',en:'Two tickets for the tower, please. Is there a student discount?',ko:'타워 입장권 두 장 주세요. 학생 할인 있나요?'},
+      {r:'n',en:'Yes, with a valid student ID it is 20% off.',ko:'네, 유효한 학생증이 있으면 20% 할인돼요.'},
+      {r:'s',en:'Great, here is my ID. Is there an audio guide available?',ko:'좋아요, 여기 학생증이요. 오디오 가이드도 있나요?'},
+      {r:'n',en:'Yes, for an extra 5 dollars, in several languages.',ko:'네, 추가 5달러에 여러 언어로 제공돼요.'},
+      {r:'s',en:'What time does the last entry close?',ko:'마지막 입장은 몇 시까지인가요?'},
+      {r:'n',en:'Last entry is at 5:30 PM, closing at 6.',ko:'마지막 입장은 오후 5시 30분, 폐장은 6시예요.'},
+    ]}]},
+  {id:'t_photo',icon:'📸',color:'#4A9A4A',bg:'#EEFAEE',country:'전체',title:{ko:'사진 요청',en:'Asking for a Photo'},
+   scripts:[{label:{ko:'사진',en:'Photo Request'},tip:{ko:'정중히 부탁+가로/세로·배경 위치 안내.',en:'Ask politely; specify orientation and what to include in frame.'},
+    lines:[
+      {r:'s',en:'Excuse me, would you mind taking a photo of us?',ko:'실례합니다, 저희 사진 좀 찍어주시겠어요?'},
+      {r:'n',en:'Not at all! Should I take it vertically or horizontally?',ko:'물론이죠! 세로로 찍을까요, 가로로 찍을까요?'},
+      {r:'s',en:'Vertical, please, with the fountain in the background.',ko:'세로로 부탁드려요, 뒤에 분수가 나오게요.'},
+      {r:'n',en:'Sure, say cheese! One more, just in case.',ko:'네, 치즈! 혹시 모르니 한 장 더요.'},
+      {r:'s',en:'These look great, thank you so much!',ko:'정말 잘 나왔어요, 감사합니다!'},
+      {r:'n',en:"You're welcome! Have a great trip.",ko:'천만에요! 좋은 여행 되세요.'},
+    ]}]},
+  {id:'t_tour',icon:'🚌',color:'#9A6A2A',bg:'#FDF6EA',country:'전체',title:{ko:'투어',en:'Guided Tour'},
+   scripts:[{label:{ko:'투어 참여',en:'Joining a Tour'},tip:{ko:'집합 장소·시간, 도중 이탈 가능 여부 확인.',en:'Confirm meeting point/time and whether you can leave early.'},
+    lines:[
+      {r:'s',en:'What time and where does the walking tour start?',ko:'도보 투어는 몇 시, 어디서 시작하나요?'},
+      {r:'n',en:'It starts at 10 AM right in front of the fountain.',ko:'오전 10시 분수 바로 앞에서 시작해요.'},
+      {r:'s',en:'How long does the tour last?',ko:'투어는 얼마나 걸리나요?'},
+      {r:'n',en:'About two and a half hours, with a short break halfway.',ko:'약 두 시간 반이고, 중간에 짧은 휴식이 있어요.'},
+      {r:'s',en:'If I need to leave early, is that possible?',ko:'중간에 나가야 하면 가능한가요?'},
+      {r:'n',en:'Of course, just let the guide know beforehand.',ko:'물론이죠, 가이드에게 미리 말씀만 해주세요.'},
+    ]}]},
+  {id:'t_theft',icon:'🚨',color:'#CC2222',bg:'#FFF0F0',country:'전체',title:{ko:'긴급: 도난',en:'Emergency: Theft'},
+   scripts:[{label:{ko:'신고',en:'Reporting'},tip:{ko:'경찰서/분실물센터 신고서(police report) 필수 - 보험 청구용.',en:'A police report is required for insurance claims.'},
+    lines:[
+      {r:'s',en:'Excuse me, my bag was just stolen! Please help me.',ko:'실례합니다, 제 가방을 방금 도둑맞았어요! 도와주세요.'},
+      {r:'n',en:'I understand. Are you hurt? Let me call the police right away.',ko:'알겠습니다. 다치셨나요? 바로 경찰을 부를게요.'},
+      {r:'s',en:"I'm okay, but my passport and wallet were inside.",ko:'저는 괜찮은데, 여권이랑 지갑이 안에 있었어요.'},
+      {r:'n',en:'You will need a police report for your embassy and insurance.',ko:'대사관과 보험을 위해 경찰 신고서가 필요할 거예요.'},
+      {r:'s',en:'Where is the nearest police station?',ko:'가장 가까운 경찰서가 어디예요?'},
+      {r:'n',en:"It's two blocks from here. I'll walk you there.",ko:'여기서 두 블록이에요. 제가 같이 가드릴게요.'},
+    ]}]},
+  {id:'t_sick',icon:'🏥',color:'#CC5522',bg:'#FFF4EE',country:'전체',title:{ko:'긴급: 아플 때',en:'Emergency: Feeling Sick'},
+   scripts:[{label:{ko:'약국/병원',en:'Pharmacy/ER'},tip:{ko:'여행자보험 서류 챙기고, 알레르기·복용약 미리 말하기.',en:'Bring travel insurance papers; mention allergies/medications.'},
+    lines:[
+      {r:'s',en:"I don't feel well. I have a fever and a bad headache.",ko:'몸이 안 좋아요. 열이 있고 두통이 심해요.'},
+      {r:'n',en:'I am sorry to hear that. Do you have travel insurance?',ko:'안타깝네요. 여행자 보험이 있으신가요?'},
+      {r:'s',en:'Yes, I do. Where is the nearest clinic or pharmacy?',ko:'네 있어요. 가장 가까운 병원이나 약국이 어디예요?'},
+      {r:'n',en:"There's a pharmacy just around the corner, and a clinic 10 minutes away.",ko:'바로 모퉁이에 약국이 있고, 10분 거리에 병원이 있어요.'},
+      {r:'s',en:'Do you know if they speak English there?',ko:'거기서 영어가 통하는지 아세요?'},
+      {r:'n',en:'Yes, most staff there speak basic English.',ko:'네, 대부분 직원들이 기본적인 영어를 해요.'},
+    ]}]},
+  {id:'t_lost',icon:'🧭',color:'#8A6A22',bg:'#FBF6E8',country:'전체',title:{ko:'긴급: 길을 잃음',en:'Emergency: Getting Lost'},
+   scripts:[{label:{ko:'도움요청',en:'Asking for Help'},tip:{ko:'호텔 명함·주소 미리 사진 찍어두면 유용.',en:'A photo of your hotel card/address is very useful.'},
+    lines:[
+      {r:'s',en:"Excuse me, I think I'm lost. Could you help me?",ko:'실례합니다, 길을 잃은 것 같아요. 도와주시겠어요?'},
+      {r:'n',en:'Of course. Where are you trying to go?',ko:'물론이죠. 어디로 가려고 하셨나요?'},
+      {r:'s',en:"I'm trying to get back to my hotel, but my phone battery died.",ko:'호텔로 돌아가려는데, 휴대폰 배터리가 나갔어요.'},
+      {r:'n',en:'Do you remember the hotel name or have it written down?',ko:'호텔 이름을 기억하시거나 적어두신 게 있나요?'},
+      {r:'s',en:'Yes, I have a card with the address here.',ko:'네, 여기 주소가 적힌 카드가 있어요.'},
+      {r:'n',en:'I know that area. Just take this street for 5 minutes.',ko:'그 동네 알아요. 이 길로 5분만 가시면 돼요.'},
+    ]}]},
+  {id:'t_jp_greeting',icon:'🇯🇵',color:'#C0303A',bg:'#FFF0F1',country:'일본',lang:'ja',title:{ko:'일본어 인사',en:'Japanese Greetings'},
+   scripts:[{label:{ko:'기초인사',en:'Basic Greetings'},tip:{ko:'가벼운 목례+짧은 인사가 기본. 존댓말 "ございます" 붙이면 정중함.',en:'A light bow + short greeting is standard; add "gozaimasu" for politeness.'},
+    lines:[
+      {jp:'おはようございます',ro:'Ohayō gozaimasu',ko:'좋은 아침이에요 (아침 인사)'},
+      {jp:'こんにちは',ro:'Konnichiwa',ko:'안녕하세요 (낮 인사)'},
+      {jp:'すみません',ro:'Sumimasen',ko:'실례합니다 / 죄송합니다'},
+      {jp:'ありがとうございます',ro:'Arigatō gozaimasu',ko:'감사합니다'},
+      {jp:'トイレはどこですか',ro:'Toire wa doko desu ka',ko:'화장실이 어디예요?'},
+      {jp:'英語を話せますか',ro:'Eigo o hanasemasu ka',ko:'영어 하실 수 있나요?'},
+    ]}]},
+  {id:'t_jp_restaurant',icon:'🇯🇵',color:'#C0303A',bg:'#FFF0F1',country:'일본',lang:'ja',title:{ko:'일본어 식당',en:'Japanese Restaurant'},
+   scripts:[{label:{ko:'식당표현',en:'Restaurant Phrases'},tip:{ko:'입구에서 인원수를 손가락으로 표시하면 편해요.',en:'Showing party size with fingers at the entrance is common and easy.'},
+    lines:[
+      {jp:'いらっしゃいませ',ro:'Irasshaimase',ko:'어서 오세요 (직원이 하는 말)'},
+      {jp:'何名様ですか',ro:'Nanmei-sama desu ka',ko:'몇 분이세요?'},
+      {jp:'二人です',ro:'Futari desu',ko:'두 명이요'},
+      {jp:'メニューを見せてください',ro:'Menyū o misete kudasai',ko:'메뉴를 보여주세요'},
+      {jp:'これをください',ro:'Kore o kudasai',ko:'이거 주세요'},
+      {jp:'お会計をお願いします',ro:'Okaikei o onegaishimasu',ko:'계산해 주세요'},
+    ]}]},
+  {id:'t_uk_tips',icon:'🇬🇧',color:'#2A4A8A',bg:'#EEF2FF',country:'영국',title:{ko:'영국 여행 꿀팁',en:'UK Travel Tips'},
+   scripts:[{label:{ko:'문화 팁',en:'Culture Tips'},tip:{ko:'줄서기 문화는 절대 규칙! 새치기는 큰 실례예요.',en:'Queueing is a strict rule — never cut in line.'},
+    lines:[
+      {r:'n',en:'Queueing is taken very seriously — always wait your turn in line.',ko:'줄서기는 아주 진지하게 여겨져요 — 항상 순서를 기다리세요.'},
+      {r:'n',en:'Tipping is not mandatory, but rounding up or 10% at restaurants is appreciated.',ko:'팁은 필수는 아니지만, 식당에서 반올림하거나 10% 정도 주면 좋아해요.'},
+      {r:'n',en:'The Tube (subway) uses an Oyster card or contactless payment.',ko:'튜브(지하철)는 오이스터 카드나 비접촉 결제를 사용해요.'},
+      {r:'n',en:'Shops usually close earlier on Sundays, so check opening hours.',ko:'상점은 보통 일요일에 일찍 닫으니, 영업시간을 확인하세요.'},
+      {r:'n',en:'Remember, traffic drives on the left — look right first when crossing.',ko:'차는 좌측통행이니, 길 건널 때 오른쪽을 먼저 보세요.'},
+    ]}]},
+  {id:'t_no_tips',icon:'🇳🇴',color:'#1A5A8A',bg:'#EAF4FA',country:'노르웨이',title:{ko:'노르웨이 여행 꿀팁',en:'Norway Travel Tips'},
+   scripts:[{label:{ko:'문화 팁',en:'Culture Tips'},tip:{ko:'물가가 매우 높음. 수돗물은 마셔도 안전.',en:'Prices are very high; tap water is safe to drink.'},
+    lines:[
+      {r:'n',en:'Norway is expensive — a simple meal can cost 20 to 30 dollars.',ko:'노르웨이는 물가가 비싸요 — 간단한 식사도 20~30달러 정도예요.'},
+      {r:'n',en:'Tap water is completely safe to drink, so bring a reusable bottle.',ko:'수돗물은 완전히 안전하니, 다회용 물병을 챙기세요.'},
+      {r:'n',en:'Almost everyone speaks fluent English, so communication is easy.',ko:'거의 모두가 영어를 유창하게 해서, 소통이 쉬워요.'},
+      {r:'n',en:'Most payments are card or contactless — cash is rarely needed.',ko:'대부분 결제는 카드나 비접촉식이라, 현금이 거의 필요 없어요.'},
+      {r:'n',en:'In summer, the sun barely sets — pack an eye mask for sleeping.',ko:'여름엔 해가 거의 지지 않으니, 수면 안대를 챙기세요.'},
+    ]}]},
+];
+
+// ═══════════════════════════
+// TRAVEL QUICK PHRASES
+// ═══════════════════════════
+var TRAVEL_QUICK=[
+  {section:'🛫 공항',items:[
+    {ko:'탑승구가 어디예요?',en:'Where is my boarding gate?'},
+    {ko:'비행기가 지연됐나요?',en:'Is my flight delayed?'},
+    {ko:'환승 편을 놓쳤어요.',en:'I missed my connecting flight.'},
+    {ko:'제 짐이 안 나왔어요.',en:'My luggage did not arrive.'},
+  ]},
+  {section:'🏨 호텔',items:[
+    {ko:'와이파이 비밀번호가 뭐예요?',en:'What is the WiFi password?'},
+    {ko:'몇 시에 조식을 먹을 수 있나요?',en:'What time does breakfast start?'},
+    {ko:'택시를 좀 불러주시겠어요?',en:'Could you call a taxi for me?'},
+    {ko:'짐을 맡길 수 있을까요?',en:'Could I store my luggage here?'},
+  ]},
+  {section:'🍽️ 식당/카페',items:[
+    {ko:'추천 메뉴가 뭐예요?',en:'What do you recommend?'},
+    {ko:'이거 매운가요?',en:'Is this spicy?'},
+    {ko:'포장 되나요?',en:'Can I get this to go?'},
+    {ko:'물 좀 주시겠어요?',en:'Could I get some water, please?'},
+  ]},
+  {section:'🚕 교통',items:[
+    {ko:'가장 가까운 역이 어디예요?',en:'Where is the nearest station?'},
+    {ko:'이 버스가 시내로 가나요?',en:'Does this bus go downtown?'},
+    {ko:'요금이 얼마인가요?',en:'How much is the fare?'},
+    {ko:'여기서 내려주세요.',en:'Please drop me off here.'},
+  ]},
+  {section:'🛍️ 쇼핑',items:[
+    {ko:'세일하는 물건인가요?',en:'Is this item on sale?'},
+    {ko:'면세 받을 수 있나요?',en:'Can I get a tax refund?'},
+    {ko:'다른 색상 있나요?',en:'Do you have this in another color?'},
+    {ko:'현금만 받나요?',en:'Do you only accept cash?'},
+  ]},
+  {section:'🆘 긴급',items:[
+    {ko:'도와주세요!',en:'Help me, please!'},
+    {ko:'경찰을 불러주세요.',en:'Please call the police.'},
+    {ko:'가장 가까운 병원이 어디예요?',en:'Where is the nearest hospital?'},
+    {ko:'제 여권을 잃어버렸어요.',en:'I lost my passport.'},
+  ]},
+];
+
+// ═══════════════════════════
+// RENDER ENGINE
+// ═══════════════════════════
+function render(html){document.getElementById('app').innerHTML=html;}
+function collectAllLines(scArr){
+  var out=[];
+  (scArr||[]).forEach(function(item){
+    (item.scripts||[]).forEach(function(sc){
+      (sc.lines||[]).forEach(function(line){
+        if(line.en)out.push(line.en);
+      });
+    });
+  });
+  return out;
+}
+function collectAllLinesAnnounced(scArr){
+  var out=[];
+  (scArr||[]).forEach(function(item){
+    var hasEnglish=(item.scripts||[]).some(function(sc){return (sc.lines||[]).some(function(l){return !!l.en;});});
+    if(!hasEnglish)return;
+    out.push({text:item.title.ko,lang:'ko-KR',slow:true});
+    (item.scripts||[]).forEach(function(sc){
+      (sc.lines||[]).forEach(function(line){
+        if(line.en)out.push({text:line.en,lang:'en-US'});
+      });
+    });
+  });
+  return out;
+}
+function playAllEverything(){
+  var arr=collectAllLinesAnnounced(HOSP_SC).concat(collectAllLinesAnnounced(SCHOOL_SC)).concat(collectAllLinesAnnounced(TRAVEL_SC));
+  PLAY_LINES=arr;
+  playAll(PLAY_LINES,'en-US');
+}
+
+// ═══════════════════════════
+// GOOGLE SHEET SYNC
+// ═══════════════════════════
+// Sheet columns (header row, exact names):
+// mode,id,title_ko,title_en,icon,color,bg,country,lang,script_label_ko,script_label_en,tip_ko,tip_en,role,en,ko,jp,ro
+function parseCSV(text){
+  var rows=[],field='',row=[],inQ=false,i=0;
+  while(i<text.length){
+    var c=text[i];
+    if(inQ){
+      if(c==='"'){ if(text[i+1]==='"'){field+='"';i+=2;} else {inQ=false;i++;} }
+      else{field+=c;i++;}
+    }else{
+      if(c==='"'){inQ=true;i++;}
+      else if(c===','){row.push(field);field='';i++;}
+      else if(c==='\r'){i++;}
+      else if(c==='\n'){row.push(field);rows.push(row);row=[];field='';i++;}
+      else{field+=c;i++;}
+    }
+  }
+  if(field.length>0||row.length>0){row.push(field);rows.push(row);}
+  return rows;
+}
+function csvToObjects(text){
+  var rows=parseCSV(text);
+  if(rows.length<2)return[];
+  var headers=rows[0].map(function(h){return h.trim();});
+  var out=[];
+  for(var r=1;r<rows.length;r++){
+    if(rows[r].length===0||(rows[r].length===1&&rows[r][0].trim()===''))continue;
+    var obj={};
+    headers.forEach(function(h,idx){obj[h]=(rows[r][idx]||'').trim();});
+    out.push(obj);
+  }
+  return out;
+}
+function buildScenariosFromRows(rows,modeFilter){
+  var byId={},order=[];
+  rows.filter(function(r){return r.mode===modeFilter&&r.id;}).forEach(function(r){
+    if(!byId[r.id]){
+      byId[r.id]={id:r.id,icon:r.icon||'💬',color:r.color||'#7A5AAA',bg:r.bg||'#FFFFFF',
+        title:{ko:r.title_ko||r.id,en:r.title_en||r.id},
+        country:r.country||'전체',lang:r.lang||'',
+        scriptsMap:{},scriptOrder:[]};
+      order.push(r.id);
+    }
+    var item=byId[r.id];
+    var slabel=r.script_label_ko||'대화';
+    if(!item.scriptsMap[slabel]){
+      item.scriptsMap[slabel]={label:{ko:slabel,en:r.script_label_en||slabel},tip:{ko:r.tip_ko||'',en:r.tip_en||''},lines:[]};
+      item.scriptOrder.push(slabel);
+    }
+    var line=(item.lang==='ja')?{jp:r.jp||r.en,ro:r.ro||'',ko:r.ko||''}:{r:r.role||'n',en:r.en||'',ko:r.ko||''};
+    item.scriptsMap[slabel].lines.push(line);
+  });
+  return order.map(function(id){
+    var it=byId[id];
+    var out={id:it.id,icon:it.icon,color:it.color,bg:it.bg,title:it.title,scripts:it.scriptOrder.map(function(sl){return it.scriptsMap[sl];})};
+    if(modeFilter==='travel'){out.country=it.country;if(it.lang)out.lang=it.lang;}
+    return out;
+  });
+}
+function buildLeaderFromRows(rows){
+  var byId={},order=[];
+  rows.filter(function(r){return r.mode==='leader'&&r.id;}).forEach(function(r){
+    if(!byId[r.id]){
+      byId[r.id]={id:r.id,icon:r.icon||'🚑',color:r.color||'#8A5A22',bg:r.bg||'#FBF4E8',
+        title:r.title_ko||r.id,desc:'',steps:[],warn:[],say:[]};
+      order.push(r.id);
+    }
+    var item=byId[r.id];
+    if(r.tip_ko&&!item.desc)item.desc=r.tip_ko;
+    var content=r.ko||r.en||'';
+    if(!content)return;
+    if(r.role==='warn')item.warn.push(content);
+    else if(r.role==='say')item.say.push(content);
+    else item.steps.push(content);
+  });
+  return order.map(function(id){return byId[id];});
+}
+function mergeScenarios(base,extra){
+  extra.forEach(function(e){
+    var idx=-1;
+    for(var i=0;i<base.length;i++){if(base[i].id===e.id){idx=i;break;}}
+    if(idx>=0)base[idx]=e;else base.push(e);
+  });
+}
+function saveSheetUrl(){
+  var v=document.getElementById('sheetUrlInput');
+  if(!v)return;
+  var url=v.value.trim();
+  try{localStorage.setItem('sheetUrl',url);}catch(e){}
+  loadSheetData(true);
+}
+function clearSheetUrl(){
+  try{localStorage.removeItem('sheetUrl');}catch(e){}
+  SHEET_STATUS='🗑️ 연동이 해제되었어요. 기본 데이터로 돌아갑니다.';
+  render(settingsHTML());
+}
+function loadSheetData(manual){
+  var url='';
+  try{url=localStorage.getItem('sheetUrl')||'';}catch(e){}
+  if(!url){ if(manual){SHEET_STATUS='ℹ️ 먼저 구글시트 CSV 링크를 입력해 주세요.';render(settingsHTML());} return; }
+  SHEET_LOADING=true;
+  if(manual)render(settingsHTML());
+  var fetchUrl=url+(url.indexOf('?')>=0?'&':'?')+'_cb='+Date.now();
+  fetch(fetchUrl,{cache:'no-store'}).then(function(res){return res.text();}).then(function(text){
+    var objs=csvToObjects(text);
+    mergeScenarios(HOSP_SC,buildScenariosFromRows(objs,'hospital'));
+    mergeScenarios(SCHOOL_SC,buildScenariosFromRows(objs,'school'));
+    mergeScenarios(TRAVEL_SC,buildScenariosFromRows(objs,'travel'));
+    mergeScenarios(EMERG,buildScenariosFromRows(objs,'emergency'));
+    mergeScenarios(LEADER_SC,buildLeaderFromRows(objs));
+    SHEET_STATUS='✅ 최신 데이터 불러옴 · '+objs.length+'줄 · '+new Date().toLocaleTimeString();
+    SHEET_LOADING=false;
+    if(SCREEN==='settings')render(settingsHTML());
+    else if(SCREEN==='home')render(homeHTML());
+    else if(SCREEN==='mode'&&MODE==='travel')render(travelHTML());
+    else if(SCREEN==='mode')render(modeHTML());
+    else if(SCREEN==='leader')render(leaderHTML());
+    else if(SCREEN==='emergency')render(emergHTML());
+  }).catch(function(e){
+    SHEET_STATUS='⚠️ 불러오기 실패 (링크 확인 필요): '+e.message;
+    SHEET_LOADING=false;
+    if(SCREEN==='settings')render(settingsHTML());
+  });
+}
+var TEMPLATE_CSV='mode,id,title_ko,title_en,icon,color,bg,country,lang,script_label_ko,script_label_en,tip_ko,tip_en,role,en,ko,jp,ro\n'+
+'hospital,derma,피부과,Dermatology,🧴,#8A6A4A,#FFF8F0,,,진료,Consultation,알레르기성 발진과 감염성 발진 구분,Distinguish allergic vs infectious rash,n,"What does the rash look like?",발진이 어떻게 생겼나요?,,\n'+
+'hospital,derma,피부과,Dermatology,🧴,#8A6A4A,#FFF8F0,,,진료,Consultation,,,s,"It is red and itchy on my arm.",팔에 빨갛고 가려워요.,,\n'+
+'school,eyestrain,눈피로,Eye Strain,👁️,#4A7A9A,#F0F8FF,,,문진,Assessment,장시간 화면 시청 확인,Check screen time,n,"Do your eyes feel tired or dry?",눈이 피곤하거나 건조한가요?,,\n'+
+'school,eyestrain,눈피로,Eye Strain,👁️,#4A7A9A,#F0F8FF,,,문진,Assessment,,,s,"Yes, especially after class.",네 특히 수업 끝나고요.,,\n'+
+'travel,t_pharmacy,약국,Pharmacy,💊,#3A8A6A,#F0FAF4,전체,,증상설명,Symptoms,증상을 짧고 명확하게 전달,Describe symptoms briefly,s,"Could you recommend something for a headache?",두통에 좋은 약 추천해 주시겠어요?,,\n'+
+'travel,t_pharmacy,약국,Pharmacy,💊,#3A8A6A,#F0FAF4,전체,,증상설명,Symptoms,,,n,"This one works well, take it after meals.",이게 효과 좋아요 식후에 드세요.,,\n'+
+'travel,t_jp_shopping,일본어 쇼핑,Japanese Shopping,🇯🇵,#C0303A,#FFF0F1,일본,ja,쇼핑표현,Shopping Phrases,,,n,,이거 얼마예요?,これはいくらですか,Kore wa ikura desu ka\n'+
+'travel,t_jp_shopping,일본어 쇼핑,Japanese Shopping,🇯🇵,#C0303A,#FFF0F1,일본,ja,쇼핑표현,Shopping Phrases,,,n,,좀 더 싸게 해주실 수 있나요?,少し安くできますか,Sukoshi yasuku dekimasu ka\n'+
+'leader,nosebleed,코피,,🩸,#B02030,#FDF0F0,,,,,코피가 날 때 리더로서 대응하는 순서,,step,,고개를 앞으로 살짝 숙이고 콧방울을 5~10분간 압박하기,,\n'+
+'leader,nosebleed,코피,,🩸,#B02030,#FDF0F0,,,,,,,step,,10분 이상 지속되면 병원 이송 고려,,\n'+
+'leader,nosebleed,코피,,🩸,#B02030,#FDF0F0,,,,,,,warn,,고개를 뒤로 젖히지 않기 (혈액이 목으로 넘어감),,\n'+
+'leader,nosebleed,코피,,🩸,#B02030,#FDF0F0,,,,,,,say,,고개를 앞으로 숙이고 코를 잡아볼게요.,,\n';
+function downloadTemplate(){
+  var blob=new Blob(['\ufeff'+TEMPLATE_CSV],{type:'text/csv;charset=utf-8;'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;a.download='medical_english_sheet_template.csv';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(url);},1000);
+}
+function goSettings(){SCREEN='settings';SHEET_STATUS='';render(settingsHTML());}
+// ── LOCATE: 주유소/충전소 찾기 ────────────
+var LOCATE_STATUS=''; var LOCATE_COORDS=null;
+function goLocate(){LOCATE_STATUS='';LOCATE_COORDS=null;SCREEN='locate';render(locateHTML());}
+function doLocate(){
+  if(!navigator.geolocation){
+    LOCATE_STATUS='이 브라우저는 위치 확인을 지원하지 않아요.';
+    render(locateHTML());return;
+  }
+  LOCATE_STATUS='__loading__';
+  render(locateHTML());
+  navigator.geolocation.getCurrentPosition(function(pos){
+    LOCATE_COORDS={lat:pos.coords.latitude,lng:pos.coords.longitude};
+    LOCATE_STATUS='ok';
+    render(locateHTML());
+  },function(err){
+    LOCATE_COORDS=null;
+    LOCATE_STATUS=(err.code===1)?'⚠️ 위치 권한이 거부됐어요. 브라우저 설정에서 위치 권한을 허용해주세요.':'⚠️ 위치를 가져오지 못했어요. 다시 시도해주세요.';
+    render(locateHTML());
+  },{enableHighAccuracy:true,timeout:10000});
+}
+function locateHTML(){
+  var LC={a:'#2E6BD6',b:'#1B4FA8'};
+  var html='<div style="min-height:100vh;background:linear-gradient(160deg,#EAF4FF,#F3F8FF,#FFFFFF);display:flex;flex-direction:column;align-items:center;padding:24px 18px 30px;">'+
+    '<button onclick="SCREEN=\'home\';render(homeHTML());" style="align-self:flex-start;background:'+LC.a+';border:none;border-radius:18px;padding:6px 14px;color:white;font-size:12px;font-weight:700;margin-bottom:18px;">← 홈</button>'+
+    '<div style="font-size:44px;margin-bottom:6px;">📍</div>'+
+    '<div style="font-size:17px;font-weight:800;color:#1A2A3A;margin-bottom:4px;text-align:center;">내 위치 · 주유소 / 충전소</div>'+
+    '<div style="font-size:12px;color:#6A7A8A;text-align:center;line-height:1.6;margin-bottom:20px;max-width:320px;">위치를 확인하면, 그 순간 진짜 실시간 데이터를 가진 지도 서비스로 바로 연결해드려요.</div>'+
+    '<button onclick="doLocate()" style="width:100%;max-width:340px;background:linear-gradient(135deg,'+LC.a+','+LC.b+');color:white;border:none;border-radius:16px;padding:15px;font-size:14px;font-weight:800;box-shadow:0 8px 20px rgba(30,80,170,0.25);margin-bottom:14px;">'+(LOCATE_STATUS==='__loading__'?'위치 확인 중...':'내 위치 확인하기')+'</button>';
+
+  if(LOCATE_STATUS&&LOCATE_STATUS!=='__loading__'&&LOCATE_STATUS!=='ok'){
+    html+='<div style="font-size:12px;color:#CC3333;margin-bottom:16px;text-align:center;max-width:320px;">'+LOCATE_STATUS+'</div>';
+  }
+
+  if(LOCATE_STATUS==='ok'&&LOCATE_COORDS){
+    var lat=LOCATE_COORDS.lat, lng=LOCATE_COORDS.lng;
+    html+='<div style="font-size:12px;color:#2A8A5A;font-weight:700;margin-bottom:16px;">✅ 위치 확인 완료! 아래에서 원하는 지도를 눌러주세요.</div>';
+    var cards=[
+      {emoji:'⛽',title:'오피넷 — 내 주변 최저가 주유소',desc:'한국석유공사 공식 실시간 유가',href:'https://www.opinet.co.kr/user/main/mainView.do'},
+      {emoji:'🗺️',title:'구글맵 — 주변 주유소',desc:'거리·영업시간·리뷰 확인',href:'https://www.google.com/maps/search/주유소/@'+lat+','+lng+',15z'},
+      {emoji:'🟢',title:'네이버지도 — 주변 주유소',desc:'국내 상세 정보에 강함',href:'https://map.naver.com/p/search/주유소?c='+lng+','+lat+',15,0,0,0,dh'},
+      {emoji:'🔌',title:'구글맵 — 전기차 충전소',desc:'주변 충전기 위치',href:'https://www.google.com/maps/search/전기차+충전소/@'+lat+','+lng+',15z'},
+      {emoji:'⚡',title:'환경부 전기차 충전소 지도',desc:'완속/급속, 실시간 사용 가능 여부',href:'https://www.ev.or.kr/portal/status/nearChargerStatus'},
+    ];
+    html+='<div style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px;">';
+    cards.forEach(function(c){
+      html+='<a href="'+c.href+'" target="_blank" style="display:flex;align-items:center;gap:12px;background:white;border-radius:14px;padding:14px 16px;text-decoration:none;color:#1A2A3A;border:1.5px solid #E2E9F2;box-shadow:0 2px 10px rgba(20,40,80,0.05);">'+
+        '<span style="font-size:26px;flex-shrink:0;">'+c.emoji+'</span>'+
+        '<div style="flex:1;"><div style="font-size:14px;font-weight:800;">'+c.title+'</div><div style="font-size:11.5px;color:#8A97A5;margin-top:2px;">'+c.desc+'</div></div>'+
+        '<span style="color:#C8D2DC;font-size:16px;">→</span></a>';
+    });
+    html+='</div>';
+    html+='<div style="margin-top:18px;font-size:11px;color:#A8B4C0;text-align:center;">확인된 위치: '+lat.toFixed(5)+', '+lng.toFixed(5)+'</div>';
+  }
+
+  html+='<div style="margin-top:24px;font-size:11px;color:#9AA6B2;text-align:center;max-width:320px;line-height:1.7;">위치 정보는 이 화면에서 지도 링크를 만드는 데만 쓰이고, 저장되지 않아요. 열 때마다 새로 확인해야 최신 위치로 연결돼요.</div>';
+  html+='</div>';
+  return html;
+}
+
+function settingsHTML(){
+  var url='';
+  try{url=localStorage.getItem('sheetUrl')||'';}catch(e){}
+  var html='<div style="min-height:100vh;background:#F5F0FF;padding:18px;">'+
+    '<button onclick="SCREEN=\'home\';render(homeHTML());" style="background:#7A5AAA;border:none;border-radius:18px;padding:6px 14px;color:white;font-size:12px;font-weight:700;margin-bottom:16px;">← 홈</button>'+
+    '<div style="font-size:18px;font-weight:900;color:#4A2A7A;margin-bottom:4px;">📊 구글시트 연동 설정</div>'+
+    '<div style="font-size:12px;color:#888;margin-bottom:16px;line-height:1.6;">구글시트에 회화 문장을 추가하면 앱을 열 때마다 자동으로 불러와요. 코드 수정 없이 직접 추가/수정할 수 있어요.</div>';
+
+  html+='<div style="background:white;border-radius:16px;padding:16px;margin-bottom:14px;border:2px solid #E0D0FF;">'+
+    '<div style="font-size:13px;font-weight:800;color:#4A2A7A;margin-bottom:10px;">① 템플릿 받기</div>'+
+    '<div style="font-size:12px;color:#666;margin-bottom:10px;line-height:1.6;">아래 버튼으로 예시 CSV 파일을 받아서, 구글 드라이브에서 "새 스프레드시트"로 여세요 (Google Sheets → 파일 → 가져오기 → 업로드).</div>'+
+    '<button onclick="downloadTemplate()" style="width:100%;background:linear-gradient(135deg,#7A5AAA,#5A3A8A);border:none;border-radius:10px;padding:11px;color:white;font-weight:700;font-size:13px;">⬇️ 템플릿 CSV 다운로드</button></div>';
+
+  html+='<div style="background:white;border-radius:16px;padding:16px;margin-bottom:14px;border:2px solid #E0D0FF;">'+
+    '<div style="font-size:13px;font-weight:800;color:#4A2A7A;margin-bottom:10px;">② 웹에 게시(CSV) 후 링크 붙여넣기</div>'+
+    '<div style="font-size:12px;color:#666;margin-bottom:10px;line-height:1.6;">구글시트에서 <b>파일 → 공유 → 웹에 게시 → 형식: 쉼표로 구분된 값(.csv)</b> 선택 후 생성된 링크를 아래에 붙여넣으세요.</div>'+
+    '<input id="sheetUrlInput" value="'+url.replace(/"/g,'&quot;')+'" placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=csv" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid #DDD;font-size:12px;margin-bottom:8px;outline:none;"/>'+
+    '<div style="display:flex;gap:8px;">'+
+    '<button onclick="saveSheetUrl()" style="flex:1;background:linear-gradient(135deg,#7A5AAA,#5A3A8A);border:none;border-radius:10px;padding:11px;color:white;font-weight:700;font-size:13px;">💾 저장하고 불러오기</button>'+
+    '<button onclick="clearSheetUrl()" style="background:white;border:2px solid #DDD;border-radius:10px;padding:11px 14px;color:#999;font-weight:700;font-size:13px;">연동 해제</button></div></div>';
+
+  if(SHEET_LOADING){
+    html+='<div style="background:#EEF0FF;border:1.5px solid #AAB8FF;border-radius:10px;padding:11px;font-size:13px;color:#3A4A9A;font-weight:600;margin-bottom:12px;">⏳ 불러오는 중...</div>';
+  }else if(SHEET_STATUS){
+    html+='<div style="background:#F0F0F0;border:1.5px solid #DDD;border-radius:10px;padding:11px;font-size:13px;color:#555;font-weight:600;margin-bottom:12px;">'+SHEET_STATUS+'</div>';
+  }
+
+  html+='<div style="background:white;border-radius:16px;padding:16px;border:2px solid #E0D0FF;">'+
+    '<div style="font-size:13px;font-weight:800;color:#4A2A7A;margin-bottom:10px;">📋 컬럼 설명</div>'+
+    '<div style="font-size:11px;color:#666;line-height:1.9;">'+
+    '<b>mode</b>: hospital / school / travel / emergency(영어 응급) / leader(한국어 응급리더)<br>'+
+    '<b>id</b>: 시나리오 고유 ID (같은 id=같은 카드로 묶임)<br>'+
+    '<b>title_ko/title_en</b>: 카드 제목<br>'+
+    '<b>icon/color/bg</b>: 아이콘·색상 (선택, 비워도 됨)<br>'+
+    '<b>country</b>: travel 전용 (전체/미국/영국/호주/노르웨이/일본)<br>'+
+    '<b>lang</b>: 일본어 회화면 ja, 아니면 비워둠<br>'+
+    '<b>script_label_ko/en</b>: 같은 카드 안 단계 구분 탭 이름<br>'+
+    '<b>tip_ko/tip_en</b>: 💡 팁 박스 내용<br>'+
+    '<b>role</b>: n(간호사·직원) / s(환자·학생·여행자)<br>'+
+    '<b>en/ko</b>: 영어·한글 문장 (한 행 = 한 줄 대사)<br>'+
+    '<b>jp/ro</b>: 일본어 회화일 때만 사용 (일본어·로마자 발음)<br>'+
+    '<hr style="border:none;border-top:1px solid #EEE;margin:10px 0;">'+
+    '<b>🧑‍⚕️ 응급리더(mode=leader) 작성법:</b><br>'+
+    '같은 id로 여러 행을 만들고, <b>role</b> 칸에 step(순서)/warn(주의)/say(대사) 중 하나를 적은 뒤 <b>ko</b> 칸에 내용을 적어요. <b>tip_ko</b>는 첫 행에만 상황 설명으로 적으면 돼요. (한국어 전용이라 en/jp/ro는 비워두세요)'+
+    '</div></div>';
+
+  html+='<div style="background:white;border-radius:16px;padding:16px;margin-bottom:14px;border:2px solid #E0D0FF;">'+
+    '<div style="font-size:13px;font-weight:800;color:#4A2A7A;margin-bottom:10px;">🔒 로그인</div>'+
+    '<div style="font-size:12px;color:#666;margin-bottom:10px;line-height:1.6;">비밀번호는 서버(Vercel 환경변수)에서 관리돼요. 바꾸려면 Vercel 프로젝트 설정에서 직접 수정해야 해요.</div>'+
+    '<button onclick="logoutApp()" style="width:100%;background:white;border:2px solid #CC8888;border-radius:10px;padding:10px;color:#CC4444;font-weight:700;font-size:13px;">로그아웃</button></div>';
+
+  html+='</div>';
+  return html;
+}
+
+// Global lines storage to avoid quote issues in onclick
+var PLAY_LINES=[];
+
+// ── HOME ──────────────────
+function homeHTML(){
+  var dp=getDailyPhrase();
+  var m=new Date().getMonth();
+  var bgs=['linear-gradient(160deg,#FFE8F5,#FFF0E8,#E8F8FF)',
+           'linear-gradient(160deg,#FFF8D0,#E8FFD0,#D0F8FF)',
+           'linear-gradient(160deg,#FFE8D0,#F8E0FF,#FFF0E0)',
+           'linear-gradient(160deg,#D0EEFF,#E8F4FF,#D8F0FF)'];
+  var si=m<3?0:m<6?1:m<9?2:3;
+  var allLines=collectAllLinesAnnounced(HOSP_SC).concat(collectAllLinesAnnounced(SCHOOL_SC)).concat(collectAllLinesAnnounced(TRAVEL_SC));
+  PLAY_LINES=allLines;
+
+  return '<div style="background:'+bgs[si]+';min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px 18px 30px;">'+
+    '<div style="position:absolute;top:14px;right:14px;">'+
+    '<select onchange="L_HOME=this.value" style="border:1.5px solid #C8A8E8;border-radius:20px;padding:5px 10px;font-size:12px;background:white;font-weight:600;outline:none;">'+
+    '<option value="ko">🇰🇷 한국어</option><option value="en">🇺🇸 English</option>'+
+    '<option value="zh">🇨🇳 中文</option><option value="ja">🇯🇵 日本語</option></select></div>'+
+
+    '<div style="margin-top:46px;text-align:center;margin-bottom:16px;">'+
+    '<div style="font-size:44px;margin-bottom:6px;">👩‍⚕️</div>'+
+    '<div style="font-size:21px;font-weight:900;color:#1A3A5A;">Medical English Pro</div>'+
+    '<div style="font-size:12px;color:#7A8AAA;margin-top:3px;">보건실 · 병원 · 의학용어 · 정원</div></div>'+
+
+    '<div style="background:white;border-radius:16px;padding:14px 16px;margin-bottom:16px;width:100%;max-width:360px;border:2px solid #E0D8FF;box-shadow:0 4px 16px rgba(100,80,200,0.08);">'+
+    '<div style="font-size:11px;color:#7A5AAA;font-weight:800;margin-bottom:6px;">📅 오늘의 표현</div>'+
+    '<div style="font-size:14px;font-weight:800;color:#222;margin-bottom:3px;">'+dp.en+'</div>'+
+    '<div style="font-size:12px;color:#666;margin-bottom:5px;">'+dp.ko+'</div>'+
+    '<div style="font-size:11px;color:#AAA;margin-bottom:8px;">💡 '+dp.tip+'</div>'+
+    '<button onclick="spk(\''+dp.en.replace(/\'/g,"\\'")+'\');" style="background:#7A5AAA;border:none;border-radius:10px;padding:5px 14px;color:white;font-size:12px;font-weight:700;">🔊 듣기</button></div>'+
+
+    '<div style="width:100%;max-width:360px;border-top:1.5px solid rgba(120,100,180,0.25);padding-top:10px;margin-bottom:8px;">'+
+    '<div style="font-size:13px;font-weight:800;color:#3A2A5A;">📚 영어 학습</div></div>'+
+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:360px;margin-bottom:8px;">'+
+    '<button onclick="goMode(\'hospital\')" style="background:white;border:2px solid #5A8ACC50;border-radius:14px;padding:14px 8px;text-align:center;box-shadow:0 3px 10px rgba(60,100,180,0.08);">'+
+    '<div style="font-size:24px;">👩‍⚕️</div><div style="font-size:12.5px;font-weight:800;color:#3A5A9A;margin-top:5px;">병원</div></button>'+
+    '<button onclick="goMode(\'school\')" style="background:white;border:2px solid #5AAA8A50;border-radius:14px;padding:14px 8px;text-align:center;box-shadow:0 3px 10px rgba(60,160,120,0.08);">'+
+    '<div style="font-size:24px;">🏫</div><div style="font-size:12.5px;font-weight:800;color:#3A8A6A;margin-top:5px;">학교 보건실</div></button>'+
+    '<button onclick="goEmergency()" style="background:white;border:2px solid #CC222250;border-radius:14px;padding:14px 8px;text-align:center;box-shadow:0 3px 10px rgba(200,0,0,0.08);">'+
+    '<div style="font-size:24px;">🚨</div><div style="font-size:12.5px;font-weight:800;color:#AA0000;margin-top:5px;">응급상황 (영어)</div></button>'+
+    '<button onclick="goMode(\'travel\')" style="background:white;border:2px solid #E8853A50;border-radius:14px;padding:14px 8px;text-align:center;box-shadow:0 3px 10px rgba(200,100,30,0.08);">'+
+    '<div style="font-size:24px;">✈️</div><div style="font-size:12.5px;font-weight:800;color:#C05A10;margin-top:5px;">여행 회화</div></button>'+
+    '</div>'+
+
+    '<button id="paBtn" onclick="playAll(PLAY_LINES,\'en-US\')" style="width:100%;max-width:360px;background:#F0E8FF;border:2px solid #C8B8F0;border-radius:12px;padding:10px;color:#5A3A8A;font-size:12px;font-weight:800;margin-bottom:18px;">🔊 전체 대화 듣기 (영어 전체 통합)</button>'+
+
+    '<div style="width:100%;max-width:360px;border-top:1.5px solid rgba(120,100,180,0.25);padding-top:10px;margin-bottom:8px;">'+
+    '<div style="font-size:13px;font-weight:800;color:#3A2A5A;">🇰🇷 한국어 대응 훈련</div></div>'+
+
+    '<button onclick="goLeader()" style="background:linear-gradient(135deg,#5A4A9A,#3A2A6A);border:none;border-radius:16px;padding:13px 20px;color:white;width:100%;max-width:360px;margin-bottom:18px;display:flex;align-items:center;gap:12px;box-shadow:0 6px 18px rgba(60,40,120,0.3);">'+
+    '<span style="font-size:26px;">🧑‍⚕️</span><div style="text-align:left;"><div style="font-size:14px;font-weight:800;">응급리더</div>'+
+    '<div style="font-size:11px;opacity:0.9;">실신·기도폐쇄·심정지 등 리더 지시 연습 (한국어)</div></div></button>'+
+
+    '<div style="width:100%;max-width:360px;border-top:1.5px solid rgba(120,100,180,0.25);padding-top:10px;margin-bottom:8px;">'+
+    '<div style="font-size:13px;font-weight:800;color:#3A2A5A;">🛠️ 도구</div></div>'+
+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:360px;margin-bottom:8px;">'+
+    '<button onclick="goLocate()" style="background:white;border:2px solid #DDD;border-radius:14px;padding:13px 8px;text-align:center;box-shadow:0 3px 10px rgba(0,0,0,0.05);">'+
+    '<div style="font-size:22px;">📍</div><div style="font-size:11.5px;font-weight:700;color:#556;margin-top:5px;">내 위치 주유소·충전소</div></button>'+
+    '<button onclick="goSettings()" style="background:white;border:2px solid #DDD;border-radius:14px;padding:13px 8px;text-align:center;box-shadow:0 3px 10px rgba(0,0,0,0.05);">'+
+    '<div style="font-size:22px;">📊</div><div style="font-size:11.5px;font-weight:700;color:#556;margin-top:5px;">구글시트 연동 설정</div></button>'+
+    '</div>'+
+
+    '<div onclick="goMode(\'garden\')" style="background:white;border-radius:14px;padding:12px 16px;text-align:center;box-shadow:0 3px 10px rgba(0,0,0,0.05);border:2px solid #C8E8C0;width:100%;max-width:360px;cursor:pointer;">'+
+    '<div style="font-size:12px;color:#4A8A4A;font-weight:800;">🌱 나의 작은 동산 — 탭해서 꾸미기</div>'+
+    gardenPreview()+
+    '</div>'+
+    '</div>';
+}
+
+function gardenPreview(){
+  var items=[];
+  var allIds=Object.values(GARDEN).filter(Array.isArray).reduce(function(a,b){return a.concat(b);});
+  allIds.forEach(function(id){
+    var item=GARDEN_SHOP.find(function(x){return x.id===id;});
+    if(item)items.push(item.icon);
+  });
+  if(items.length===0)return '<div style="font-size:24px;color:#CCC;padding:8px 0;">🌿 출석하면 정원이 자라나요!</div>';
+  var disp=items.slice(0,12);
+  return '<div style="font-size:24px;letter-spacing:3px;min-height:36px;">'+disp.join('')+'</div>';
+}
+
+// ── EMERGENCY ────────────
+var EM_ITEM=null; var EM_SCRIPT=0;
+function goEmergency(){SCREEN='emergency';EM_ITEM=null;EM_SCRIPT=0;render(emergHTML());}
+function emergHTML(){
+  var html='<div style="min-height:100vh;background:#FFF0F0;display:flex;flex-direction:column;">'+
+    '<div style="background:linear-gradient(135deg,#CC2222,#AA0000);padding:13px 14px;color:white;display:flex;align-items:center;gap:10px;flex-shrink:0;">'+
+    '<button onclick="EM_ITEM=null;render(homeHTML());" style="background:rgba(255,255,255,0.25);border:none;border-radius:18px;padding:5px 12px;color:white;font-size:12px;font-weight:700;">← 홈</button>'+
+    '<span style="font-size:14px;font-weight:800;">🚨 응급 상황 대응</span></div>'+
+    '<div style="padding:12px;flex:1;">';
+  if(!EM_ITEM){
+    html+='<div style="background:white;border-radius:14px;padding:14px;margin-bottom:12px;border:2px solid #FFAAAA;">'+
+      '<div style="font-size:13px;font-weight:800;color:#CC2222;margin-bottom:6px;">⚡ 즉시 119가 필요한 상황</div>'+
+      '<div style="font-size:12px;color:#666;line-height:1.7;">• 의식 없음 · 맥박/호흡 없음<br>• 심한 호흡곤란<br>• 아나필락시스<br>• 멈추지 않는 경련<br>• 심한 흉통</div></div>';
+    EMERG.forEach(function(em){
+      html+='<button onclick="EM_ITEM=\''+em.id+'\';EM_SCRIPT=0;render(emergHTML());" style="width:100%;background:white;border:2px solid '+em.color+'40;border-radius:16px;padding:14px;text-align:left;margin-bottom:10px;display:flex;align-items:center;gap:12px;">'+
+        '<span style="font-size:30px;">'+em.icon+'</span>'+
+        '<div><div style="font-size:14px;font-weight:800;color:'+em.color+';">'+em.title.ko+'</div>'+
+        '<div style="font-size:11px;color:#888;margin-top:2px;">'+em.scripts.length+'단계 가이드</div></div>'+
+        '<span style="margin-left:auto;color:#CCC;font-size:18px;">→</span></button>';
+    });
+  }else{
+    var em=EMERG.filter(function(x){return x.id===EM_ITEM;})[0];
+    var sc=em.scripts[EM_SCRIPT];
+    html+='<div style="display:flex;align-items:center;gap:10px;background:'+em.bg+';border-radius:14px;padding:12px;margin-bottom:12px;border:2px solid '+em.color+'30;">'+
+      '<span style="font-size:26px;">'+em.icon+'</span><div style="font-size:14px;font-weight:800;color:'+em.color+';">'+em.title.ko+'</div></div>';
+    html+='<div style="display:flex;gap:6px;margin-bottom:12px;overflow-x:auto;">';
+    em.scripts.forEach(function(s,i){
+      html+='<button onclick="EM_SCRIPT='+i+';render(emergHTML());" style="flex-shrink:0;padding:6px 12px;border-radius:20px;border:2px solid '+em.color+';background:'+(EM_SCRIPT===i?em.color:'white')+';color:'+(EM_SCRIPT===i?'white':em.color)+';font-size:11px;font-weight:700;">'+s.label.ko+'</button>';
+    });
+    html+='</div>';
+    sc.lines.forEach(function(line){
+      var isN=line.r==='n';
+      html+='<div style="display:flex;flex-direction:'+(isN?'row':'row-reverse')+';margin-bottom:10px;align-items:flex-end;gap:8px;">'+
+        '<span style="font-size:18px;flex-shrink:0;">'+(isN?'👩‍⚕️':'😟')+'</span>'+
+        '<div style="background:'+(isN?em.color+'18':'white')+';border:1.5px solid '+(isN?em.color+'50':'#DDD')+';border-radius:'+(isN?'4px 14px 14px 14px':'14px 4px 14px 14px')+';padding:9px 12px;max-width:86%;">'+
+        '<div style="font-size:13px;color:#1A1A1A;line-height:1.55;font-weight:600;">'+line.en+'</div>'+
+        '<div style="font-size:11px;color:#777;margin-top:3px;">'+line.ko+'</div>'+
+        '<button onclick="spk(\''+line.en.replace(/\'/g,"\\'")+'\');" style="margin-top:6px;background:'+em.color+';border:none;border-radius:10px;padding:4px 11px;color:white;font-size:11px;font-weight:700;">🔊</button>'+
+        '</div></div>';
+    });
+    html+='<div style="background:#FFFCEE;border:2px solid #F0D850;border-radius:12px;padding:11px;margin-top:4px;font-size:12px;color:#7A5800;line-height:1.6;">⚡ '+sc.tip.ko+'</div>';
+    var enLines=sc.lines.map(function(l){return l.en;});
+    PLAY_LINES=enLines;
+    html+='<button id="paBtn" onclick="playAll(PLAY_LINES)" style="width:100%;margin-top:12px;background:linear-gradient(135deg,#CC2222,#AA0000);border:none;border-radius:14px;padding:12px;color:white;font-size:14px;font-weight:800;">🔊 전체 듣기</button>';
+    html+='<button onclick="EM_ITEM=null;render(emergHTML());" style="width:100%;margin-top:8px;background:white;border:2px solid #CC222240;border-radius:12px;padding:10px;color:#CC2222;font-size:13px;font-weight:700;">← 목록으로</button>';
+  }
+  html+='</div></div>';
+  return html;
+}
+
+// ── EMERGENCY LEADER (한국어 실전 대응 훈련) ────────────
+var LEADER_ITEM=null; var LEADER_REVEAL=0; var LEADER_PRACTICE=false;
+var LEADER_SC=[
+  {id:'airway',icon:'🫁',color:'#CC2244',bg:'#FFF0F2',title:'기도폐쇄 (상/하기도 + 하임리히)',
+   desc:'이물질이나 부종으로 숨쉬기 힘들어하는 상황 — 상기도/하기도 폐쇄를 구분하고, 부분/완전 폐쇄에 따라 다르게 대응해요.',
+   steps:[
+     '의식 및 반응 평가 (0: 기도호흡평가 진행, X: 즉시 CPR)',
+     '상기도 폐쇄 신호 확인: 호흡곤란·무호흡, 변성(Hot potato voice), 삼킴곤란, 흡기 시 고음의 협착음(stridor)',
+     '하기도 폐쇄 신호 확인: 말 못함(Can not speak), 심한기침·구토·꽥꽥거림, 청색증, 호기 시 쌕쌕거림(wheezing)',
+     '감별진단: 상기도(흡기천명)인지 하기도(쌕쌕 천명)인지, 약물중독·뇌졸중·이물질 여부까지 확인 ("더 숙이세요, 90도/45도면 올라왔다 내려간다")',
+     '부분폐쇄(의식 있고 기침 가능)면 → 호흡 방해하지 않고 기침 격려, 비강캐뉼러·안면마스크로 산소 10L/min 공급, 즉시 응급실行',
+     '완전폐쇄(의식없거나 발성·기침 불가, 청색증)면 → 즉시 등 두드리기(back blow) 5회 → 효과 없으면 복부 밀어내기(하임리히, abdominal thrust) 5회 → 반복',
+     '즉시 119 호출 + 자동심장충격기(AED) 준비 지시',
+     '교내 교직원에게 지원 요청, 호흡·심정지 인지 시 즉시 CPR 알고리즘 시작',
+     '보호자 연락, 차량 및 현장 통제, 기록, 상급자·관리자 보고'],
+   warn:['영아 1세 미만은 간이 상대적으로 커서 복부밀어내기를 시행하지 않기','기침이 가능하면 방해하지 말고 격려하기','손가락으로 이물질을 억지로 빼내려 하지 않기','환자가 나보다 크면 의자나 바닥에 앉힌 상태에서 하임리히 시행'],
+   say:['더 숙이세요! 90도나 45도면 이물질이 올라왔다 다시 내려가요.','즉시 119 호출하고 자동심장충격기 가져와주세요!','거기 힘쎈 분 네 명, 저 좀 도와주세요!']},
+
+  {id:'arrest',icon:'💔',color:'#AA1122',bg:'#FFEBEE',title:'심정지 (CPR + 앰부백)',
+   desc:'반응·호흡이 없는 심정지 상황 — 가슴압박과 인공호흡(앰부백)을 정확한 방법으로 시행해요.',
+   steps:[
+     '반응 확인 후 즉시 역할 분담: "너는 119 신고", "너는 AED 가져와"',
+     '가슴압박 30회 시행 (흉골 중앙, 분당 100~120회, 5~6cm 깊이)',
+     '인공호흡 2회 — Head Tilt-Chin Lift로 기도 확보 후 시행',
+     '앰부백 사용 시 E-C기법: 엄지·검지로 마스크를 누르고, 나머지 손가락으로 턱뼈를 감싸 밀착시키기',
+     '성인 기준 앰부백 1회 압박량은 약 500~600ml, 일정한 압력으로 서서히 짜기',
+     '30(압박):2(인공호흡) 비율로 반복',
+     'AED 도착 즉시 전원 켜고 음성 안내에 따라 패드 부착, 분석 중에는 환자 접촉 금지',
+     '제세동 필요 시 모두 물러나게 하고 버튼 누르기, 이후 즉시 압박 재개',
+     '119 도착까지 압박-AED 사이클 반복'],
+   warn:['앰부백을 너무 빠르고 세게 짜면 환자 위장이 팽창해 구토를 유발할 수 있음','직접 인공호흡은 체력 소모가 크고 정확한 양 주입이 어려워 앰부백이 더 용이함 (산소통 연결 시 소생률 상승)','압박 중단 시간은 최소화하기'],
+   say:['거기 학생, 119에 전화해서 심정지 환자 발생이라고 알려주세요!','너는 AED 가져와줘!','제가 압박할 테니 숫자 세는 것 좀 도와주세요.']},
+
+  {id:'cspine',icon:'🦴',color:'#5A5A8A',bg:'#EFEFF7',title:'경추손상 & 통나무 굴리기 (Log-roll)',
+   desc:'낙상·외상으로 경추(목뼈) 손상이 의심될 때, 척추를 보호하며 안전하게 자세를 바꾸는 방법이에요.',
+   steps:[
+     '경추 고정: 양손으로 환자 머리를 감싸 움직이지 않게 고정',
+     '구조자는 무릎을 꿇고, 경추를 무릎 사이에 끼워 고정 유지',
+     '통나무 굴리기 인원 배치: 환자 옆에 최소 3명이 무릎 꿇고 자리 잡기',
+     '1번 학생: 한 손은 어깨 뒷부분, 다른 손은 골반(엉덩이뼈) 부위를 깊숙이 잡기',
+     '2번 학생: 골반과 무릎 잡기 (1번 학생과 손이 교차되게)',
+     '3번 학생: 무릎과 발목 잡기 (2번 학생과 손이 교차되게)',
+     '리더 구호 "하나, 둘, 셋"에 맞춰 머리부터 발끝까지 한 번에 옆으로 굴리기',
+     '그대로 자세 유지한 채, 등 뒤에 들것(또는 등판) 밀어 넣기',
+     '"하나둘셋" 구호로 다시 중립자세(원위치)로 복귀',
+     '경추손상 환자는 이동 시 항상 직선으로만 옮기기'],
+   warn:['혼자서 돌리면 몸이 뒤틀릴 위험이 있어 반드시 인원 배치 후 진행하기','각자 마음대로 먼저 당기지 않기 — 반드시 구호에 맞춰 동시에 움직이기','머리(경추) 고정은 처음부터 끝까지 리더가 담당하기'],
+   say:['얘들아, 지금 환자 척추를 보호하면서 옆으로 돌려야 해. 혼자서는 몸이 뒤틀릴 수 있어서 도움이 필요해. 선생님이 말하는 자리를 잡아주세요!','3명! 환자 옆에 무릎을 꿇고 앉아주세요.','1번 학생, 한 손은 환자 어깨 뒷부분을 잡고, 다른 한 손은 골반 부위를 깊숙이 잡아줘.','자, 선생님이 머리를 고정할게. 다들 준비됐지? 하나, 둘, 셋!','그대로 유지! 움직이지 마. 이제 등 뒤에 들것 밀어 넣어주세요.']},
+
+  {id:'faint',icon:'😵',color:'#CC5522',bg:'#FFF4EE',title:'실신',
+   desc:'갑자기 의식을 잃고 쓰러진 상황 — 호흡과 맥박 유무에 따라 대응이 완전히 달라져요.',
+   steps:[
+     '호흡·맥박 확인',
+     '[호흡맥박 있음] 기도 유지, 산소 제공, 옷을 느슨하게, 호흡하기 쉽도록 좌측위(회복자세)',
+     '[호흡맥박 있음] 안정적이면 활력징후(체온·맥박·호흡·혈압), 산소포화도, 혈당까지 측정',
+     '[호흡맥박 있음] 119 도착까지 보온 유지',
+     '[호흡맥박 없음] 즉시 가슴압박 30회 시작',
+     '[호흡맥박 없음] 산소 제공 — iGel(기도유지기) + 앰부백 2회',
+     '[호흡맥박 없음] 119 도착까지 심정지 대응 반복'],
+   warn:['심정지 상황일 때는 활력징후·산소포화도·혈당 체크를 생략하고 압박에 집중하기','iGel은 뒷면에만 젤을 발라야 함 (많이 바르면 기도로 흘러들어갈 위험)'],
+   say:['저기요! 119에 전화해서 학생이 쓰러졌고 의식이 없다고 말해주세요!','다른 분들은 뒤로 물러나서 공간 좀 확보해주세요.']},
+
+  {id:'seizure',icon:'⚡',color:'#8A5A22',bg:'#FBF4E8',title:'뇌전증 (경련, Seizure)',
+   desc:'몸이 뻣뻣해지거나 떨리며 의식이 흐려지는 발작 상황이에요.',
+   steps:[
+     '초기 증상 확인: 호흡곤란, 타액분비, 청색증, 혀 깨물기, 심박수·혈압 증가',
+     '경련 시작 시각, 지속 시간, 경련 양상을 관찰하고 병력 확인',
+     '주변의 위험한 물건을 치우고 수건이나 옷을 바닥에 깔아주기',
+     '기도 유지를 위해 옷을 느슨하게 풀기',
+     '옆으로 눕혀 기도 유지 자세 취하기',
+     '후기 증상 관찰: 무반응, 근육 이완, 과도한 침흘림, 요실금·배변, 두통, 피로, 근육통',
+     '의식 회복 없이 5분 이상 발작이 지속되면 즉시 119 신고',
+     '의식이 있으면 평소 다니던 신경과 외래 안내'],
+   warn:['팔다리를 억지로 붙잡지 않기','입안에 아무것도 넣지 않기','학생의 자존감이 손상되지 않도록 주변을 배려하며 대응하기'],
+   say:['여러분 뒤로 물러나서 공간 좀 만들어주세요.','시간 좀 재주실 수 있어요? 언제부터 시작했는지요.']},
+
+  {id:'neuro',icon:'🧠',color:'#7A2266',bg:'#FBF0F6',title:'신경학적 장애 의심 (뇌출혈 등)',
+   desc:'뇌졸중·뇌출혈이 의심될 때 시행하는 신경학적 평가예요 — 정확한 순서로 확인하고 기록해요.',
+   steps:[
+     '안구편위(Eye ball deviation) 확인 — 눈꺼풀을 들어 올려 양쪽 눈동자 방향 확인',
+     '안구진탕(Nystagmus) 확인 — 눈동자가 의지와 상관없이 떨리거나 회전하는지 관찰 (전정기관·뇌간·소뇌 이상 시사)',
+     '대광반사(Pupil light reflex) — 펜라이트로 동공 크기와 양쪽 대칭 확인 (2뇌신경·3동안신경·뇌간 손상 여부)',
+     '팔 떨어뜨리기 검사(Drop arm test) — 팔을 얼굴 위로 들어올린 후 힘 빼고 떨어뜨려 관찰',
+     '통증반응 확인 — 승모근을 강하게 움켜잡거나, 손톱 뿌리 부분을 펜 등으로 눌러 반응 확인',
+     'Babinski test — 발바닥 외측에서 엄지발가락 쪽으로 그어 반응 관찰 (양성=부채꼴로 펴짐, 중추신경계 손상 의심)',
+     '회외근 편위검사 — 손바닥을 위로 하고 양팔을 들어보게 해서 근력 확인 (한쪽/양쪽 떨어지면 운동신경 경로 이상)',
+     '지코 검사(finger-to-nose) — 손가락으로 자신의 코를 찍게 하기, 양쪽 비교 (제대로 못 찍으면 소뇌 이상)',
+     '피아노쳐봐 검사 — 손가락 전체가 공중에서 빠르고 잘 조율되는지 확인 (신경계 조율능력 저하 여부)',
+     '룸베르그 검사 — 눈 뜨고 서있기(안되면 소뇌이상), 눈 감고 서있기(안되면 전정기관 이상)',
+     '일자보행 검사(소뇌기능저하 확인), 외발 검사(근력·전신평형능력 확인)',
+     '열 체크 및 혈당 확인 — 고열로 인한 의식저하, 저혈당쇼크 감별',
+     '넥타이·벨트·신발 벗기기, 회복자세 취하기'],
+   warn:['절대 주무르지 않기 — 자극이 주어지면 혈압이 오르며 두개강내압(ICP)이 상승해 악화될 수 있음','흔들면 음식물 역류·혀 말림 위험','뇌출혈 시 중요한 건 순환이 아니라 기도확보와 안정','119에 기저질환·복용약·과거 동일 약물력·다니는 병원 정보를 정확히 파악해 전달하기','의식 있으면 평소 다니던 신경과 외래 안내'],
+   say:['눈 떠보세요, 제 손가락 따라와보세요.','손가락으로 본인 코 찍어보세요.','119에 전화해서 신경학적 이상 의심 환자라고 전달해주세요.']},
+
+  {id:'chestpain',icon:'💢',color:'#B02030',bg:'#FDF0F0',title:'흉통',
+   desc:'가슴 통증을 호소하는 상황 — 식은땀 동반 시 특히 주의해야 해요.',
+   steps:[
+     '통증 양상과 지속 시간 확인, 식은땀 동반 여부 확인',
+     '필요시 진통제(예: 이부프로펜 계열) 제공 검토',
+     '호전이 없으면 즉시 병원 진료 안내',
+     '발열(Fever)·통증(Pain)·피로감(Fatigue)이 뚜렷하면 반드시 병원 진료 권유'],
+   warn:['식은땀이 동반된 흉통은 심장 문제 가능성이 있어 특히 주의 깊게 관찰하기'],
+   say:['식은땀이 나세요? 통증이 얼마나 오래 됐어요?','병원에 가보시는 게 좋을 것 같아요.']},
+
+  {id:'hyperventilate',icon:'💨',color:'#C08A20',bg:'#FFF8E8',title:'과호흡',
+   desc:'불안이나 스트레스로 숨을 지나치게 빠르게 몰아쉬는 상황이에요.',
+   steps:[
+     '증상 확인: 분당 20회 이상 빠른 호흡, 입술이 파랗게 변하거나 얼굴 창백',
+     '현기증으로 비틀거리거나 쓰러질 수 있음, 손발 저림·입 주위 이상감각 확인',
+     '불안정·흥분된 모습으로 대화가 어려울 수 있음을 인지하고 차분히 접근',
+     '119 신고',
+     '반좌위(상체를 세운 자세) 취하기',
+     '옷을 느슨하게 풀어주기',
+     '천천히 깊게 심호흡 유도 — 7초 들이쉬고 11초 내쉬기',
+     '산소포화도와 활력징후 측정하기'],
+   warn:['실신·가슴통증 동반 여부를 계속 관찰하기','환자가 흥분한 상태이므로 차분한 목소리로 안내하기'],
+   say:['저와 같이 숨 쉬어봐요. 7초 동안 천천히 들이쉬고, 11초 동안 내쉬어요.','괜찮아요, 제가 옆에 있어요.']},
+];
+function goLeader(){SCREEN='leader';LEADER_ITEM=null;LEADER_REVEAL=0;LEADER_PRACTICE=false;render(leaderHTML());}
+function leaderSelItem(id){
+  for(var i=0;i<LEADER_SC.length;i++){if(LEADER_SC[i].id===id){LEADER_ITEM=LEADER_SC[i];LEADER_REVEAL=0;LEADER_PRACTICE=false;render(leaderHTML());return;}}
+}
+function leaderTogglePractice(){LEADER_PRACTICE=!LEADER_PRACTICE;LEADER_REVEAL=0;render(leaderHTML());}
+function leaderReveal(n){LEADER_REVEAL=n;render(leaderHTML());}
+function leaderHTML(){
+  var LC={a:'#5A4A9A',b:'#3A2A6A'};
+  var html='<div style="min-height:100vh;background:#F3F0FA;display:flex;flex-direction:column;">'+
+    '<div style="background:linear-gradient(135deg,'+LC.a+','+LC.b+');padding:13px 14px;color:white;display:flex;align-items:center;gap:10px;flex-shrink:0;">'+
+    '<button onclick="LEADER_ITEM=null;render(homeHTML());" style="background:rgba(255,255,255,0.25);border:none;border-radius:18px;padding:5px 12px;color:white;font-size:12px;font-weight:700;">← 홈</button>'+
+    '<span style="font-size:14px;font-weight:800;">🧑‍⚕️ 응급리더 훈련</span></div>'+
+    '<div style="padding:13px;flex:1;">';
+
+  if(!LEADER_ITEM){
+    html+='<div style="background:white;border-radius:14px;padding:13px;margin-bottom:12px;border:2px solid '+LC.a+'30;">'+
+      '<div style="font-size:12px;color:#666;line-height:1.7;">현장에서 여러분이 <b>리더</b>가 되어 주변 사람들에게 무엇을 지시해야 하는지 순서대로 익히고 연습하는 공간이에요. 카드를 선택하고 "🙈 순서 가리기 연습"으로 스스로 떠올려보세요.</div></div>';
+    LEADER_SC.forEach(function(l){
+      html+='<button onclick="leaderSelItem(\''+l.id+'\')" style="width:100%;background:white;border:2px solid '+l.color+'40;border-radius:16px;padding:14px;text-align:left;margin-bottom:10px;display:flex;align-items:center;gap:12px;">'+
+        '<span style="font-size:30px;">'+l.icon+'</span>'+
+        '<div><div style="font-size:14px;font-weight:800;color:'+l.color+';">'+l.title+'</div>'+
+        '<div style="font-size:11px;color:#888;margin-top:2px;">'+l.steps.length+'단계</div></div>'+
+        '<span style="margin-left:auto;color:#CCC;font-size:18px;">→</span></button>';
+    });
+  }else{
+    var l=LEADER_ITEM;
+    html+='<div style="background:'+l.bg+';border-radius:14px;padding:13px;margin-bottom:12px;border:2px solid '+l.color+'30;">'+
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><span style="font-size:28px;">'+l.icon+'</span>'+
+      '<div style="font-size:15px;font-weight:800;color:'+l.color+';">'+l.title+'</div></div>'+
+      '<div style="font-size:12px;color:#666;line-height:1.6;">'+l.desc+'</div></div>';
+
+    html+='<button onclick="leaderTogglePractice()" style="width:100%;margin-bottom:12px;background:'+(LEADER_PRACTICE?l.color:'white')+';border:2px solid '+l.color+';border-radius:12px;padding:10px;color:'+(LEADER_PRACTICE?'white':l.color)+';font-size:13px;font-weight:800;">'+(LEADER_PRACTICE?'✅ 연습 모드 켜짐 — 전체 보기로 전환':'🙈 순서 가리고 연습하기')+'</button>';
+
+    html+='<div style="font-size:12px;font-weight:800;color:'+l.color+';margin-bottom:8px;">📋 리더 행동 순서</div>';
+    l.steps.forEach(function(step,i){
+      var shown=!LEADER_PRACTICE||i<LEADER_REVEAL;
+      html+='<div style="display:flex;gap:10px;margin-bottom:9px;align-items:flex-start;">'+
+        '<span style="flex-shrink:0;width:24px;height:24px;border-radius:50%;background:'+l.color+';color:white;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;">'+(i+1)+'</span>';
+      if(shown){
+        html+='<div style="flex:1;background:white;border-radius:10px;padding:9px 12px;font-size:13px;color:#222;line-height:1.55;border:1.5px solid '+l.color+'25;">'+step+'</div>';
+      }else{
+        html+='<div style="flex:1;background:#EEE;border-radius:10px;padding:9px 12px;">'+
+          '<button onclick="leaderReveal('+(i+1)+')" style="background:none;border:none;color:#999;font-size:12px;font-weight:700;">🙈 다음 단계 확인하기</button></div>';
+      }
+      html+='</div>';
+    });
+    if(LEADER_PRACTICE&&LEADER_REVEAL<l.steps.length){
+      html+='<div style="text-align:center;margin-bottom:10px;"><button onclick="leaderReveal('+l.steps.length+')" style="background:none;border:none;color:#AAA;font-size:11px;text-decoration:underline;">전체 정답 한번에 보기</button></div>';
+    }
+
+    html+='<div style="background:#FFF0EE;border:2px solid #FFAA9950;border-radius:12px;padding:11px;margin:12px 0;">'+
+      '<div style="font-size:12px;font-weight:800;color:#CC4422;margin-bottom:6px;">⚠️ 주의사항</div>';
+    l.warn.forEach(function(w){html+='<div style="font-size:12px;color:#994422;line-height:1.7;">• '+w+'</div>';});
+    html+='</div>';
+
+    html+='<div style="background:white;border:2px solid '+l.color+'30;border-radius:12px;padding:12px;margin-bottom:14px;">'+
+      '<div style="font-size:12px;font-weight:800;color:'+l.color+';margin-bottom:8px;">🗣️ 실전 대사 (이렇게 외치세요)</div>';
+    l.say.forEach(function(s){
+      html+='<div style="display:flex;align-items:center;gap:8px;background:'+l.bg+';border-radius:10px;padding:9px 12px;margin-bottom:7px;">'+
+        '<div style="flex:1;font-size:13px;color:#333;line-height:1.5;">"'+s+'"</div>'+
+        '<button onclick="spk(\''+s.replace(/\'/g,"\\'")+'\',\'ko-KR\')" style="background:'+l.color+';border:none;border-radius:10px;padding:6px 10px;color:white;font-size:12px;flex-shrink:0;">🔊</button></div>';
+    });
+    html+='</div>';
+
+    html+='<button onclick="LEADER_ITEM=null;render(leaderHTML());" style="width:100%;background:white;border:2px solid '+l.color+'40;border-radius:12px;padding:10px;color:'+l.color+';font-size:13px;font-weight:700;">← 목록으로</button>';
+  }
+  html+='</div></div>';
+  return html;
+}
+
+// ── MODE SCREEN ───────────
+function goMode(m){
+  if(m==='travel'){
+    MODE='travel';TRAVEL_ITEM=null;TRAVEL_SCRIPT=0;TRAVEL_COUNTRY='전체';TRAVEL_TAB='scenarios';
+    SCREEN='mode';render(travelHTML());return;
+  }
+  MODE=m;TAB=(m==='garden')?'garden_view':'scenarios';ITEM=null;SCRIPT=0;
+  SEARCH_Q='';VCNT=5;MEM=[];QI=0;QANS=false;
+  SCREEN='mode';render(modeHTML());
+}
+
+function ca(){
+  if(MODE==='school')return{a:'#3A8A6A',b:'#2A7060'};
+  if(MODE==='hospital')return{a:'#3A6A9A',b:'#2A5A8A'};
+  if(MODE==='garden')return{a:'#4A8A4A',b:'#2A6A2A'};
+  return{a:'#7A5AAA',b:'#5A3A8A'};
+}
+function sc(){return MODE==='school'?SCHOOL_SC:HOSP_SC;}
+
+function modeHTML(){
+  var c=ca();
+  var modeLabel=MODE==='school'?'🏫 학교 보건실':MODE==='hospital'?'🏥 병원':MODE==='garden'?'🌱 나의 동산':'';
+  var TABS=MODE==='garden'?
+    [{id:'garden_view',icon:'🌸',label:'내 정원'},{id:'garden_shop',icon:'🛍️',label:'꾸미기'},{id:'garden_attend',icon:'✅',label:'출석'}]:
+    [
+      {id:'scenarios',icon:'📋',label:MODE==='school'?'보건실':'진료과'},
+      {id:'phrases',icon:'💬',label:'표현'},
+      {id:'emergency',icon:'🚨',label:'응급'},
+      {id:'vocab',icon:'📚',label:'단어'},
+      {id:'quiz',icon:'✏️',label:'퀴즈'},
+      {id:'quick',icon:'⚡',label:'빠른'},
+      {id:'community',icon:'👥',label:'커뮤니티'},
+    ];
+
+  var html='<div style="min-height:100vh;display:flex;flex-direction:column;">'+
+    '<div style="background:linear-gradient(135deg,'+c.a+','+c.b+');padding:12px 14px 0;color:white;flex-shrink:0;">'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'+
+    '<button onclick="SCREEN=\'home\';render(homeHTML());" style="background:rgba(255,255,255,0.25);border:none;border-radius:18px;padding:5px 12px;color:white;font-size:12px;font-weight:700;">← 홈</button>'+
+    '<span style="flex:1;font-size:13px;font-weight:800;">'+modeLabel+'</span>'+
+    '<span style="font-size:11px;background:rgba(255,255,255,0.2);border-radius:10px;padding:2px 8px;">💎 '+PTS+'pts</span>'+
+    (MODE!=='garden'?'<button onclick="goMode(\'garden\')" style="background:#4A8A4A;border:none;border-radius:10px;padding:4px 10px;color:white;font-size:11px;font-weight:700;">🌱 정원</button>':'')+
+    '</div>'+
+    '<div style="display:flex;overflow-x:auto;gap:2px;">'+
+    TABS.map(function(t){
+      var active=TAB===t.id;
+      return '<button onclick="setTab(\''+t.id+'\')" style="flex-shrink:0;padding:6px 9px 8px;border:none;background:'+(active?'white':'transparent')+';color:'+(active?c.a:'rgba(255,255,255,0.85)')+';border-radius:'+(active?'8px 8px 0 0':'0')+';font-size:9px;font-weight:'+(active?800:500)+';display:flex;flex-direction:column;align-items:center;gap:2px;">'+
+      '<span style="font-size:14px;">'+t.icon+'</span>'+t.label+'</button>';
+    }).join('')+
+    '</div></div>'+
+    '<div style="flex:1;overflow-y:auto;padding:13px;padding-bottom:30px;background:#F0F8FF;">'+contentHTML()+'</div></div>';
+  return html;
+}
+
+function setTab(t){TAB=t;ITEM=null;QANS=false;MEM=[];SEARCH_Q='';PLAYING=false;if(window.speechSynthesis)window.speechSynthesis.cancel();render(modeHTML());}
+
+function contentHTML(){
+  var c=ca();
+
+  // GARDEN VIEW
+  if(TAB==='garden_view'){
+    var allItems=[];
+    Object.keys(GARDEN).forEach(function(cat){
+      if(Array.isArray(GARDEN[cat])){
+        GARDEN[cat].forEach(function(id){
+          var item=GARDEN_SHOP.filter(function(x){return x.id===id;})[0];
+          if(item)allItems.push(item);
+        });
+      }
+    });
+    var m=new Date().getMonth();
+    var skyColors=['#87CEEB','#98FB98','#FFB347','#B0C4DE'];
+    var groundColors=['#90EE90','#7CFC00','#DAA520','#F0F0F0'];
+    var seasonIdx=m<3?0:m<6?1:m<9?2:3;
+    var skyC=skyColors[seasonIdx];
+    var gndC=groundColors[seasonIdx];
+    var seasonLabel=['🌸 봄','☀️ 여름','🍂 가을','❄️ 겨울'][seasonIdx];
+
+    var html='<div style="background:white;border-radius:20px;overflow:hidden;margin-bottom:12px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">'+
+      '<div style="background:'+skyC+';min-height:180px;position:relative;padding:10px;">'+
+      '<div style="position:absolute;top:8px;left:10px;font-size:11px;color:rgba(0,0,0,0.5);font-weight:700;">'+seasonLabel+' · 나의 작은 동산</div>';
+    html+='<div style="position:absolute;top:16px;left:40%;font-size:24px;opacity:0.7;">☁️</div>';
+    html+='<div style="position:absolute;top:8px;right:15%;font-size:18px;opacity:0.6;">☁️</div>';
+    var positions=[
+      {left:'5%',top:'55%'},{left:'20%',top:'40%'},{left:'35%',top:'55%'},
+      {left:'50%',top:'45%'},{left:'65%',top:'55%'},{left:'78%',top:'42%'},
+      {left:'88%',top:'58%'},{left:'12%',top:'60%'},{left:'55%',top:'60%'},
+      {left:'30%',top:'65%'},{left:'70%',top:'50%'},{left:'45%',top:'68%'},
+    ];
+    allItems.slice(0,12).forEach(function(item,i){
+      var pos=positions[i%positions.length];
+      html+='<div style="position:absolute;left:'+pos.left+';top:'+pos.top+';font-size:28px;transform:translate(-50%,-50%);filter:drop-shadow(1px 2px 3px rgba(0,0,0,0.2));" title="'+item.name+'">'+item.icon+'</div>';
+    });
+    html+='<div style="position:absolute;bottom:0;left:0;right:0;height:30px;background:'+gndC+';"></div>';
+    if(allItems.length===0){
+      html+='<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:rgba(0,0,0,0.4);font-size:13px;font-weight:600;">🌿 포인트 모아서<br>정원을 꾸며요!</div>';
+    }
+    html+='</div>';
+    var total=GARDEN_SHOP.length;
+    var owned=allItems.length;
+    var pct=Math.round(owned/total*100);
+    html+='<div style="padding:14px;">'+
+      '<div style="display:flex;justify-content:space-between;font-size:12px;color:#666;margin-bottom:6px;">'+
+      '<span>정원 완성도</span><span>'+owned+'/'+total+' ('+pct+'%)</span></div>'+
+      '<div style="background:#EEE;border-radius:8px;height:10px;overflow:hidden;margin-bottom:10px;">'+
+      '<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,'+c.a+','+c.b+');border-radius:8px;transition:width 0.5s;"></div></div>'+
+      (pct===100?'<div style="text-align:center;font-size:16px;font-weight:800;color:'+c.a+';">✨ 정원 완성! 최고의 동산이에요!</div>':'')+
+    '</div></div>';
+    return html;
+  }
+
+  // GARDEN SHOP
+  if(TAB==='garden_shop'){
+    var cats=[
+      {key:'trees',label:'🌳 나무'},
+      {key:'flowers',label:'🌸 꽃'},
+      {key:'benches',label:'🪑 소품'},
+      {key:'animals',label:'🐇 동물 친구'},
+      {key:'decorations',label:'✨ 장식'},
+    ];
+    var html='<div style="font-size:14px;font-weight:800;color:'+c.a+';margin-bottom:8px;">🛍️ 정원 꾸미기 상점</div>';
+    if(MSG){
+      var bc=MSGTYPE==='ok'?'#EEF8EE':'#FFF0F0';
+      var bc2=MSGTYPE==='ok'?'#88CC88':'#FFB8B8';
+      var tc=MSGTYPE==='ok'?'#2A7A2A':'#CC4444';
+      html+='<div style="background:'+bc+';border:1.5px solid '+bc2+';border-radius:10px;padding:10px;margin-bottom:10px;font-size:13px;color:'+tc+';font-weight:600;">'+MSG+'</div>';
+    }
+    cats.forEach(function(cat){
+      var items=GARDEN_SHOP.filter(function(x){return x.cat===cat.key;});
+      html+='<div style="font-size:13px;font-weight:800;color:'+c.a+';margin:12px 0 8px;">'+cat.label+'</div>';
+      html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">';
+      items.forEach(function(item){
+        var owned=isOwned(item.id);
+        html+='<div style="background:'+(owned?c.a+'12':'white')+';border-radius:14px;padding:12px 10px;border:2px solid '+(owned?c.a:'#DDD')+';text-align:center;">'+
+          '<div style="font-size:28px;">'+item.icon+'</div>'+
+          '<div style="font-size:12px;font-weight:700;color:#333;margin-top:5px;">'+item.name+'</div>'+
+          '<div style="font-size:10px;color:#888;margin-bottom:6px;">'+item.desc+'</div>'+
+          (owned?
+            '<div style="background:'+c.a+';border-radius:10px;padding:5px;color:white;font-size:11px;font-weight:700;">✓ 정원에 있어요</div>':
+            '<button onclick="buyGarden(\''+item.id+'\',\''+item.cat+'\',\''+item.name+'\',\''+item.icon+'\','+item.price+')" style="background:linear-gradient(135deg,'+c.a+','+c.b+');border:none;border-radius:10px;padding:6px 12px;color:white;font-size:11px;font-weight:700;width:100%;">심기 '+item.price+'pts</button>')+
+          '</div>';
+      });
+      html+='</div>';
+    });
+    return html;
+  }
+
+  // GARDEN ATTEND
+  if(TAB==='garden_attend'){
+    var stage=STREAK>=365?'🏡':STREAK>=240?'🎄':STREAK>=180?'🌲':STREAK>=120?'🌳':STREAK>=60?'🪴':STREAK>=30?'🌿':STREAK>=7?'🌱':'🌰';
+    var html='<div style="background:white;border-radius:20px;padding:20px;text-align:center;margin-bottom:12px;border:2px solid #C8E8C0;box-shadow:0 4px 16px rgba(0,0,0,0.07);">'+
+      '<div style="font-size:13px;color:#4A8A4A;font-weight:800;margin-bottom:12px;">🌱 정원 성장 현황</div>'+
+      '<div style="font-size:42px;margin-bottom:8px;">'+stage+'</div>'+
+      '<div style="font-size:22px;font-weight:900;color:#4A8A4A;">'+PTS+' pts</div>'+
+      '<div style="font-size:13px;color:#888;margin-top:4px;">🔥 '+STREAK+'일 연속 출석</div>'+
+      '<div style="margin-top:12px;background:#F0F0F0;border-radius:10px;height:12px;overflow:hidden;">'+
+      '<div style="width:'+Math.min((STREAK%30)/30*100,100)+'%;height:100%;background:linear-gradient(90deg,'+c.a+','+c.b+');border-radius:10px;transition:width 0.6s;"></div></div>'+
+      '<div style="font-size:11px;color:#AAA;margin-top:4px;">다음 성장까지 '+(30-STREAK%30)+'일</div>'+
+      '<div style="font-size:11px;color:#6A8A6A;margin-top:8px;">🌰→🌱(7일)→🌿(30일)→🪴(60일)→🌳(120일)→🌲(180일)→🎄(240일)→🏡(365일)</div>'+
+      '</div>';
+    html+='<button onclick="doAttend()" '+(ATTENDED?'disabled':'')+' style="width:100%;padding:14px;border-radius:14px;border:none;background:'+(ATTENDED?'#DDD':'linear-gradient(135deg,'+c.a+','+c.b+')')+';color:'+(ATTENDED?'#999':'white')+';font-size:14px;font-weight:800;margin-bottom:12px;">'+(ATTENDED?'✅ 오늘 출석 완료! (+10pts)':'✅ 출석 체크하기 (+10pts)')+'</button>';
+    html+='<div style="background:white;border-radius:16px;padding:16px;border:2px solid #DDD;">'+
+      '<div style="font-size:13px;font-weight:800;color:'+c.a+';margin-bottom:10px;">💡 포인트 적립 방법</div>'+
+      [['✅ 출석 체크','10pts/일'],['✏️ 퀴즈 넘기기','2pts/개'],['📚 단어 외우기','3pts/개'],['🔥 7일 연속','보너스 30pts']].map(function(row){
+        return '<div style="display:flex;justify-content:space-between;font-size:13px;color:#555;padding:6px 0;border-bottom:1px solid #F0F0F0;">'+
+          '<span>'+row[0]+'</span><span style="font-weight:700;color:'+c.a+';">'+row[1]+'</span></div>';
+      }).join('')+'</div>';
+    if(MSG){
+      var bc=MSGTYPE==='ok'?'#EEF8EE':'#FFF0F0';
+      html='<div style="background:'+bc+';border:1.5px solid #88CC88;border-radius:10px;padding:10px;margin-bottom:10px;font-size:13px;color:#2A7A2A;font-weight:600;">'+MSG+'</div>'+html;
+    }
+    return html;
+  }
+
+  // SCENARIOS
+  if(TAB==='scenarios'&&!ITEM){
+    var allLines=collectAllLinesAnnounced(sc());
+    PLAY_LINES=allLines;
+    var html='<button id="paBtn" onclick="playAll(PLAY_LINES,\'en-US\')" style="width:100%;margin-bottom:12px;background:linear-gradient(135deg,'+c.a+','+c.b+');border:none;border-radius:14px;padding:12px;color:white;font-size:13px;font-weight:800;">🔊 이 카테고리 전체 통합 듣기 ('+sc().length+'개 시나리오)</button>';
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">';
+    sc().forEach(function(s){
+      html+='<button onclick="selItem(\''+s.id+'\')" style="background:'+s.bg+';border:2px solid '+s.color+'40;border-radius:16px;padding:14px 10px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,0.06);">'+
+        '<div style="font-size:24px;">'+s.icon+'</div>'+
+        '<div style="font-size:12px;font-weight:700;color:'+s.color+';margin-top:6px;">'+s.title.ko+'</div>'+
+        '<div style="font-size:10px;color:#BBB;margin-top:2px;">'+s.title.en+'</div></button>';
+    });
+    html+='</div>';
+    return html;
+  }
+
+  if(TAB==='scenarios'&&ITEM){
+    var s=ITEM; var sc2=s.scripts[SCRIPT];
+    var html='<div style="display:flex;align-items:center;gap:10px;background:'+s.bg+';border-radius:14px;padding:13px;margin-bottom:12px;border:2px solid '+s.color+'30;">'+
+      '<span style="font-size:30px;">'+s.icon+'</span><div>'+
+      '<div style="font-size:16px;font-weight:800;color:'+s.color+';">'+s.title.ko+'</div>'+
+      '<div style="font-size:11px;color:#AAA;">'+s.title.en+'</div></div></div>';
+    html+='<div style="display:flex;gap:6px;margin-bottom:12px;overflow-x:auto;">';
+    s.scripts.forEach(function(sc3,i){
+      html+='<button onclick="SCRIPT='+i+';render(modeHTML());" style="flex-shrink:0;padding:6px 13px;border-radius:20px;border:2px solid '+s.color+';background:'+(SCRIPT===i?s.color:'white')+';color:'+(SCRIPT===i?'white':s.color)+';font-size:11px;font-weight:700;">'+sc3.label.ko+'</button>';
+    });
+    html+='</div>';
+    sc2.lines.forEach(function(line){
+      var isN=line.r==='n';
+      html+='<div style="display:flex;flex-direction:'+(isN?'row':'row-reverse')+';margin-bottom:10px;align-items:flex-end;gap:8px;">'+
+        '<span style="font-size:18px;flex-shrink:0;">'+(isN?'👩‍⚕️':'🧑‍🎓')+'</span>'+
+        '<div style="background:'+(isN?s.color+'18':'white')+';border:1.5px solid '+(isN?s.color+'50':'#DDD')+';border-radius:'+(isN?'4px 14px 14px 14px':'14px 4px 14px 14px')+';padding:9px 12px;max-width:84%;">'+
+        '<div style="font-size:10px;color:'+(isN?s.color:'#AAA')+';font-weight:700;margin-bottom:2px;">'+(isN?'Nurse/Doctor 👩‍⚕️':'Student/Patient 🧑‍🎓')+'</div>'+
+        '<div style="font-size:14px;color:#1A1A1A;line-height:1.55;font-weight:600;">'+line.en+'</div>'+
+        '<div style="font-size:12px;color:#888;margin-top:3px;">'+line.ko+'</div>'+
+        '<button onclick="spk(\''+line.en.replace(/\'/g,"\\'")+'\');" style="margin-top:7px;background:'+s.color+';border:none;border-radius:10px;padding:4px 12px;color:white;font-size:11px;font-weight:700;">🔊 듣기</button>'+
+        '</div></div>';
+    });
+    html+='<div style="background:#FFFCEE;border:2px solid #F0D850;border-radius:12px;padding:11px;margin-top:4px;display:flex;gap:8px;">'+
+      '<span>💡</span><div><div style="font-size:11px;font-weight:800;color:#9A7800;margin-bottom:2px;">TIP</div>'+
+      '<div style="font-size:12px;color:#7A5800;line-height:1.6;">'+sc2.tip.ko+'</div></div></div>';
+    var enLines=sc2.lines.map(function(l){return l.en;});
+    PLAY_LINES=enLines;
+    html+='<button id="paBtn" onclick="playAll(PLAY_LINES)" style="width:100%;margin-top:12px;background:linear-gradient(135deg,'+c.a+','+c.b+');border:none;border-radius:14px;padding:13px;color:white;font-size:14px;font-weight:800;">🔊 전체 대화 듣기</button>';
+    html+='<button onclick="ITEM=null;render(modeHTML());" style="width:100%;margin-top:8px;background:white;border:2px solid '+c.a+'40;border-radius:12px;padding:10px;color:'+c.a+';font-size:13px;font-weight:700;">← 목록으로</button>';
+    return html;
+  }
+
+  // PHRASES
+  if(TAB==='phrases'){
+    var phs=MODE==='school'?[
+      {ko:'어디가 아파요?',en:'Where does it hurt?'},
+      {ko:'언제부터요?',en:'When did it start?'},
+      {ko:'오늘 아침 밥 먹었어요?',en:'Did you eat breakfast this morning?'},
+      {ko:'어제 뭐 먹었어요?',en:'What did you eat yesterday?'},
+      {ko:'마지막 식사가 몇 시예요?',en:'What time was your last meal?'},
+      {ko:'대변이 규칙적으로 나오나요?',en:'Is your bowel movement regular?'},
+      {ko:'여기 누워서 쉬세요.',en:'Please lie down here and rest.'},
+      {ko:'이 약을 물과 함께 드세요.',en:'Please take this medicine with water.'},
+      {ko:'미지근한 물을 천천히 마세요.',en:'Please drink warm water slowly.'},
+      {ko:'부모님께 연락할게요.',en:'I will contact your parents.'},
+      {ko:'마스크를 꼭 착용해요.',en:'Please wear a mask at all times.'},
+      {ko:'더 나빠지면 바로 다시 와요.',en:'Come back immediately if it gets worse.'},
+    ]:[
+      {ko:'보험증 있으세요?',en:'Do you have your insurance card?'},
+      {ko:'이 양식을 작성해 주세요.',en:'Please fill out this form.'},
+      {ko:'처방전 드릴게요.',en:'Here is your prescription.'},
+      {ko:'검사 결과가 나왔어요.',en:'Your test results are ready.'},
+      {ko:'수술 전 금식하세요.',en:'Please fast before surgery.'},
+      {ko:'입원이 필요해요.',en:'You need to be admitted.'},
+      {ko:'오늘 퇴원하셔도 됩니다.',en:'You can be discharged today.'},
+      {ko:'정맥 주사 맞을 거예요.',en:'You will receive an IV drip.'},
+      {ko:'혈압 재겠습니다.',en:'I will check your blood pressure.'},
+      {ko:'통증이 1~10 중 몇이에요?',en:'Rate your pain from 1 to 10.'},
+    ];
+    var html='<div style="font-size:14px;font-weight:800;color:'+c.a+';margin-bottom:12px;">📌 핵심 표현</div>';
+    phs.forEach(function(p){
+      html+='<div style="background:white;border-radius:14px;padding:11px 13px;margin-bottom:8px;border:1.5px solid #DDD;display:flex;align-items:center;justify-content:space-between;">'+
+        '<div style="flex:1;"><div style="font-size:12px;color:#888;margin-bottom:2px;">🇰🇷 '+p.ko+'</div>'+
+        '<div style="font-size:14px;font-weight:700;color:#222;">🇺🇸 '+p.en+'</div></div>'+
+        '<button onclick="spk(\''+p.en.replace(/\'/g,"\\'")+'\')" style="background:'+c.a+';border:none;border-radius:12px;padding:7px 13px;color:white;font-size:14px;flex-shrink:0;margin-left:8px;font-weight:700;">🔊</button></div>';
+    });
+    return html;
+  }
+
+  // EMERGENCY TAB
+  if(TAB==='emergency'){
+    return '<div style="text-align:center;padding:20px;">'+
+      '<div style="font-size:14px;color:#666;margin-bottom:16px;">응급 상황 대응 가이드</div>'+
+      '<button onclick="goEmergency()" style="background:linear-gradient(135deg,#CC2222,#AA0000);border:none;border-radius:16px;padding:20px 30px;color:white;font-size:16px;font-weight:800;box-shadow:0 6px 18px rgba(200,0,0,0.3);">🚨 응급 가이드 열기</button>'+
+      '<div style="margin-top:16px;font-size:12px;color:#AAA;">ABC 체크 · CPR/AED · 지남력 확인 · 혈압 측정</div></div>';
+  }
+
+  // VOCAB
+  if(TAB==='vocab'){
+    var tv=getTodayVocab();
+    var html='<div style="font-size:14px;font-weight:800;color:'+c.a+';margin-bottom:4px;">📚 오늘의 의학 용어</div>'+
+      '<div style="font-size:11px;color:#888;margin-bottom:8px;">매일 다른 단어 세트 · 총 100개 의학용어</div>'+
+      '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">';
+    [5,10,15,20].forEach(function(n){
+      html+='<button onclick="VCNT='+n+';MEM=[];render(modeHTML());" style="padding:6px 14px;border-radius:24px;border:2px solid '+c.a+';background:'+(VCNT===n?c.a:'white')+';color:'+(VCNT===n?'white':c.a)+';font-size:12px;font-weight:700;">'+n+'개</button>';
+    });
+    html+='</div>';
+    html+='<button onclick="requestNotif()" style="width:100%;background:linear-gradient(135deg,#7A5AAA,#5A3A8A);border:none;border-radius:12px;padding:10px;color:white;font-size:12px;font-weight:700;margin-bottom:10px;">🔔 매일 단어 팝업 알림 받기</button>';
+    tv.forEach(function(v,i){
+      var done=MEM.indexOf(i)>=0;
+      html+='<div style="background:'+(done?c.a+'10':'white')+';border-radius:14px;padding:11px 13px;margin-bottom:8px;border:2px solid '+(done?c.a+'50':'#DDD')+';">'+
+        '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">'+
+        '<div style="flex:1;">'+
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">'+
+        '<span style="background:'+c.a+'20;color:'+c.a+';font-size:10px;font-weight:700;border-radius:8px;padding:2px 6px;">'+v.cat+'</span>'+
+        '<span style="font-size:14px;font-weight:800;color:'+(done?'#888':'#222')+';">'+v.en+'</span></div>'+
+        '<div style="font-size:13px;color:#666;">'+v.ko+'</div>'+
+        '<div style="font-size:11px;color:#AAA;margin-top:3px;font-style:italic;">'+v.ex+'</div></div>'+
+        '<div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0;">'+
+        '<button onclick="spk(\''+v.en+'\')" style="background:'+c.a+';border:none;border-radius:10px;padding:6px 11px;color:white;font-size:13px;">🔊</button>'+
+        '<button onclick="'+(done?'':('MEM.push('+i+');addPts(3);render(modeHTML());'))+'" style="background:'+(done?'#CCC':c.b)+';border:none;border-radius:10px;padding:6px 10px;color:white;font-size:11px;font-weight:700;cursor:'+(done?'default':'pointer')+';">'+(done?'✓':'외움')+'</button>'+
+        '</div></div></div>';
+    });
+    if(MEM.length===tv.length&&tv.length>0){
+      html+='<div style="background:linear-gradient(135deg,'+c.a+','+c.b+');border-radius:16px;padding:16px;text-align:center;color:white;margin-top:8px;"><div style="font-size:26px;">🎉</div><div style="font-size:14px;font-weight:800;margin-top:4px;">오늘 단어 완료! +'+tv.length*3+'pts!</div></div>';
+    }
+    return html;
+  }
+
+  // QUIZ
+  if(TAB==='quiz'){
+    var phs2=MODE==='school'?[
+      {ko:'어디가 아파요?',en:'Where does it hurt?'},
+      {ko:'언제부터요?',en:'When did it start?'},
+      {ko:'오늘 아침 밥 먹었어요?',en:'Did you eat breakfast this morning?'},
+      {ko:'어제 뭐 먹었어요?',en:'What did you eat yesterday?'},
+      {ko:'대변이 규칙적으로 나오나요?',en:'Is your bowel movement regular?'},
+      {ko:'여기 누워서 쉬세요.',en:'Please lie down here and rest.'},
+      {ko:'이 약을 물과 함께 드세요.',en:'Please take this medicine with water.'},
+      {ko:'부모님께 연락할게요.',en:'I will contact your parents.'},
+      {ko:'마스크를 꼭 착용해요.',en:'Please wear a mask at all times.'},
+      {ko:'식후 30분은 눕지 마세요.',en:'Do not lie down for 30 minutes after eating.'},
+    ]:[
+      {ko:'보험증 있으세요?',en:'Do you have your insurance card?'},
+      {ko:'처방전 드릴게요.',en:'Here is your prescription.'},
+      {ko:'검사 결과가 나왔어요.',en:'Your test results are ready.'},
+      {ko:'입원이 필요해요.',en:'You need to be admitted.'},
+      {ko:'수술 전 금식하세요.',en:'Please fast before surgery.'},
+      {ko:'혈압 재겠습니다.',en:'I will check your blood pressure.'},
+      {ko:'통증이 1~10 중 몇이에요?',en:'Rate your pain from 1 to 10.'},
+      {ko:'오늘 퇴원하셔도 됩니다.',en:'You can be discharged today.'},
+      {ko:'정맥 주사 맞을 거예요.',en:'You will receive an IV drip.'},
+      {ko:'입원이 필요해요.',en:'You need to be admitted.'},
+    ];
+    var p=phs2[QI%phs2.length];
+    var html='<div style="font-size:14px;font-weight:800;color:'+c.a+';margin-bottom:4px;">✏️ 퀴즈</div>'+
+      '<div style="font-size:11px;color:#AAA;margin-bottom:12px;">'+(QI%phs2.length+1)+'/'+phs2.length+'</div>'+
+      '<div style="background:white;border-radius:20px;padding:24px 20px;border:2px solid #DDD;text-align:center;min-height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;">'+
+      '<div style="font-size:17px;font-weight:800;color:#333;margin-bottom:20px;line-height:1.4;">'+p.ko+'</div>';
+    if(!QANS){
+      html+='<button onclick="QANS=true;render(modeHTML());" style="background:linear-gradient(135deg,'+c.a+','+c.b+');color:white;border:none;border-radius:28px;padding:11px 30px;font-size:14px;font-weight:700;">정답 보기</button>';
+    }else{
+      html+='<div style="background:'+c.a+'15;border-radius:14px;padding:11px 16px;border:2px solid '+c.a+'40;margin-bottom:12px;width:100%;"><div style="font-size:15px;font-weight:800;color:'+c.b+';">'+p.en+'</div></div>'+
+        '<button onclick="spk(\''+p.en.replace(/\'/g,"\\'")+'\')" style="background:'+c.a+';border:none;border-radius:20px;padding:7px 18px;color:white;font-size:13px;font-weight:700;">🔊 듣기</button>';
+    }
+    html+='</div>';
+    if(QANS){
+      html+='<div style="display:flex;gap:8px;margin-top:12px;">'+
+        '<button onclick="QI=Math.max(0,QI-1);QANS=false;render(modeHTML());" style="flex:1;padding:12px;border-radius:12px;border:2px solid '+c.a+'40;background:white;font-size:13px;font-weight:700;color:'+c.a+';">← 이전</button>'+
+        '<button onclick="QI++;QANS=false;addPts(2);render(modeHTML());" style="flex:1;padding:12px;border-radius:12px;border:none;background:linear-gradient(135deg,'+c.a+','+c.b+');font-size:13px;font-weight:700;color:white;">다음 +2pts →</button></div>';
+    }
+    return html;
+  }
+
+  // QUICK PHRASES
+  if(TAB==='quick'){
+    var html='<div style="font-size:14px;font-weight:800;color:'+c.a+';margin-bottom:12px;">⚡ 빠른 표현</div>';
+    QUICK_PH.forEach(function(section){
+      html+='<div style="font-size:12px;font-weight:800;color:'+c.a+';margin:10px 0 7px;">'+section.section+'</div>';
+      section.items.forEach(function(p){
+        html+='<div style="background:white;border-radius:12px;padding:10px 12px;margin-bottom:7px;border:1.5px solid #DDD;display:flex;align-items:center;justify-content:space-between;">'+
+          '<div style="flex:1;"><div style="font-size:12px;color:#888;margin-bottom:2px;">'+p.ko+'</div>'+
+          '<div style="font-size:13px;font-weight:700;color:#222;">'+p.en+'</div></div>'+
+          '<button onclick="spk(\''+p.en.replace(/\'/g,"\\'")+'\')" style="background:'+c.a+';border:none;border-radius:10px;padding:7px 12px;color:white;font-size:13px;flex-shrink:0;margin-left:8px;font-weight:700;">🔊</button></div>';
+      });
+    });
+    return html;
+  }
+
+  // COMMUNITY
+  if(TAB==='community'){
+    var html='<div style="font-size:14px;font-weight:800;color:'+c.a+';margin-bottom:4px;">💬 익명 커뮤니티</div>'+
+      '<div style="font-size:11px;color:#AAA;margin-bottom:12px;">욕설·비방 시 신고로 삭제됩니다.</div>';
+    if(!LNAME){
+      html+='<div style="background:white;border-radius:14px;padding:14px;margin-bottom:14px;border:2px solid #DDD;">'+
+        '<div style="font-size:13px;font-weight:700;margin-bottom:8px;">닉네임 설정</div>'+
+        '<div style="display:flex;gap:8px;"><input id="ni" placeholder="닉네임 입력" style="flex:1;padding:8px 12px;border-radius:10px;border:1.5px solid #DDD;font-size:13px;outline:none;"/>'+
+        '<button onclick="setName()" style="background:'+c.a+';border:none;border-radius:10px;padding:8px 14px;color:white;font-weight:700;font-size:13px;">입장</button></div></div>';
+    }else{
+      html+='<div style="background:'+c.a+'15;border-radius:12px;padding:10px 14px;margin-bottom:12px;border:1.5px solid '+c.a+'40;display:flex;justify-content:space-between;align-items:center;">'+
+        '<span style="font-size:13px;font-weight:600;color:'+c.b+';">👤 '+LNAME+'</span>'+
+        '<button onclick="LNAME=\'\';sv();render(modeHTML());" style="background:none;border:none;color:#AAA;font-size:12px;">나가기</button></div>'+
+        '<div style="background:white;border-radius:14px;padding:13px;margin-bottom:12px;border:2px solid #DDD;">'+
+        '<textarea id="pta" placeholder="경험이나 팁을 공유해보세요 😊" rows="3" style="width:100%;padding:9px;border-radius:10px;border:1.5px solid #DDD;font-size:13px;resize:none;outline:none;"></textarea>'+
+        '<button onclick="submitPost()" style="width:100%;margin-top:8px;background:linear-gradient(135deg,'+c.a+','+c.b+');border:none;border-radius:10px;padding:10px;color:white;font-weight:700;font-size:13px;">게시하기</button></div>';
+    }
+    POSTS_DATA.forEach(function(post){
+      html+='<div style="background:white;border-radius:14px;padding:13px;margin-bottom:10px;border:1.5px solid #DDD;">'+
+        '<div style="display:flex;justify-content:space-between;margin-bottom:7px;">'+
+        '<span style="font-size:13px;font-weight:700;color:#444;">'+post.user+'</span>'+
+        '<span style="font-size:11px;color:#BBB;">'+post.time+'</span></div>'+
+        '<div style="font-size:14px;color:#333;line-height:1.55;margin-bottom:9px;">'+post.text+'</div>'+
+        '<div style="display:flex;gap:8px;">'+
+        '<button onclick="likePost('+post.id+')" style="background:#F0F0F0;border:none;border-radius:10px;padding:5px 12px;font-size:12px;">❤️ '+post.likes+'</button>'+
+        '<button onclick="reportPost('+post.id+')" style="background:#FFF0F0;border:1px solid #FFB8B8;border-radius:10px;padding:5px 12px;font-size:12px;color:#CC4444;">🚨 신고</button>'+
+        '</div></div>';
+    });
+    return html;
+  }
+
+  return '';
+}
+
+// ═══════════════════════════
+// TRAVEL MODE SCREEN
+// ═══════════════════════════
+var TC={a:'#E8853A',b:'#B0530A'};
+function travelSc(){
+  if(TRAVEL_COUNTRY==='전체')return TRAVEL_SC;
+  return TRAVEL_SC.filter(function(x){return x.country==='전체'||x.country===TRAVEL_COUNTRY;});
+}
+function travelSetTab(t){TRAVEL_TAB=t;TRAVEL_ITEM=null;PLAYING=false;if(window.speechSynthesis)window.speechSynthesis.cancel();render(travelHTML());}
+function travelSetCountry(ct){TRAVEL_COUNTRY=ct;TRAVEL_ITEM=null;render(travelHTML());}
+function travelSelItem(id){
+  var list=TRAVEL_SC;
+  for(var i=0;i<list.length;i++){if(list[i].id===id){TRAVEL_ITEM=list[i];TRAVEL_SCRIPT=0;render(travelHTML());return;}}
+}
+
+function travelHTML(){
+  var TABS=[
+    {id:'scenarios',icon:'📋',label:'시나리오'},
+    {id:'quick',icon:'⚡',label:'빠른표현'},
+    {id:'community',icon:'👥',label:'커뮤니티'},
+  ];
+  var html='<div style="min-height:100vh;display:flex;flex-direction:column;">'+
+    '<div style="background:linear-gradient(135deg,'+TC.a+','+TC.b+');padding:12px 14px 0;color:white;flex-shrink:0;">'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'+
+    '<button onclick="SCREEN=\'home\';render(homeHTML());" style="background:rgba(255,255,255,0.25);border:none;border-radius:18px;padding:5px 12px;color:white;font-size:12px;font-weight:700;">← 홈</button>'+
+    '<span style="flex:1;font-size:13px;font-weight:800;">✈️ 여행 회화</span>'+
+    '<span style="font-size:11px;background:rgba(255,255,255,0.2);border-radius:10px;padding:2px 8px;">💎 '+PTS+'pts</span>'+
+    '<button onclick="goMode(\'garden\')" style="background:#4A8A4A;border:none;border-radius:10px;padding:4px 10px;color:white;font-size:11px;font-weight:700;">🌱 정원</button>'+
+    '</div>'+
+    '<div style="display:flex;overflow-x:auto;gap:2px;">'+
+    TABS.map(function(t){
+      var active=TRAVEL_TAB===t.id;
+      return '<button onclick="travelSetTab(\''+t.id+'\')" style="flex-shrink:0;padding:6px 9px 8px;border:none;background:'+(active?'white':'transparent')+';color:'+(active?TC.a:'rgba(255,255,255,0.85)')+';border-radius:'+(active?'8px 8px 0 0':'0')+';font-size:9px;font-weight:'+(active?800:500)+';display:flex;flex-direction:column;align-items:center;gap:2px;">'+
+      '<span style="font-size:14px;">'+t.icon+'</span>'+t.label+'</button>';
+    }).join('')+
+    '</div></div>'+
+    '<div style="flex:1;overflow-y:auto;padding:13px;padding-bottom:30px;background:#FFF8F0;">'+travelContentHTML()+'</div></div>';
+  return html;
+}
+
+function travelContentHTML(){
+  // SCENARIOS LIST
+  if(TRAVEL_TAB==='scenarios'&&!TRAVEL_ITEM){
+    var html='<div style="display:flex;gap:6px;margin-bottom:12px;overflow-x:auto;">';
+    TRAVEL_COUNTRIES.forEach(function(ct){
+      var active=TRAVEL_COUNTRY===ct;
+      html+='<button onclick="travelSetCountry(\''+ct+'\')" style="flex-shrink:0;padding:6px 13px;border-radius:20px;border:2px solid '+TC.a+';background:'+(active?TC.a:'white')+';color:'+(active?'white':TC.a)+';font-size:12px;font-weight:700;">'+ct+'</button>';
+    });
+    html+='</div>';
+    var list=travelSc();
+    var allLines=collectAllLinesAnnounced(list);
+    PLAY_LINES=allLines;
+    html+='<button id="paBtn" onclick="playAll(PLAY_LINES,\'en-US\')" style="width:100%;margin-bottom:12px;background:linear-gradient(135deg,'+TC.a+','+TC.b+');border:none;border-radius:14px;padding:12px;color:white;font-size:13px;font-weight:800;">🔊 필터된 시나리오 전체 듣기 ('+list.length+'개, 일본어 회화 제외)</button>';
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">';
+    list.forEach(function(s){
+      html+='<button onclick="travelSelItem(\''+s.id+'\')" style="background:'+s.bg+';border:2px solid '+s.color+'40;border-radius:16px;padding:14px 10px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,0.06);">'+
+        '<div style="font-size:24px;">'+s.icon+'</div>'+
+        '<div style="font-size:12px;font-weight:700;color:'+s.color+';margin-top:6px;">'+s.title.ko+'</div>'+
+        '<div style="font-size:10px;color:#BBB;margin-top:2px;">'+s.title.en+'</div></button>';
+    });
+    html+='</div>';
+    if(list.length===0)html+='<div style="text-align:center;color:#AAA;font-size:13px;padding:30px 0;">해당 국가의 시나리오가 없어요.</div>';
+    return html;
+  }
+
+  // SCENARIO DETAIL
+  if(TRAVEL_TAB==='scenarios'&&TRAVEL_ITEM){
+    var s=TRAVEL_ITEM; var sc2=s.scripts[TRAVEL_SCRIPT]; var isJa=s.lang==='ja';
+    var html='<div style="display:flex;align-items:center;gap:10px;background:'+s.bg+';border-radius:14px;padding:13px;margin-bottom:12px;border:2px solid '+s.color+'30;">'+
+      '<span style="font-size:30px;">'+s.icon+'</span><div>'+
+      '<div style="font-size:16px;font-weight:800;color:'+s.color+';">'+s.title.ko+'</div>'+
+      '<div style="font-size:11px;color:#AAA;">'+s.title.en+'</div></div></div>';
+    if(s.scripts.length>1){
+      html+='<div style="display:flex;gap:6px;margin-bottom:12px;overflow-x:auto;">';
+      s.scripts.forEach(function(sc3,i){
+        html+='<button onclick="TRAVEL_SCRIPT='+i+';render(travelHTML());" style="flex-shrink:0;padding:6px 13px;border-radius:20px;border:2px solid '+s.color+';background:'+(TRAVEL_SCRIPT===i?s.color:'white')+';color:'+(TRAVEL_SCRIPT===i?'white':s.color)+';font-size:11px;font-weight:700;">'+sc3.label.ko+'</button>';
+      });
+      html+='</div>';
+    }
+    sc2.lines.forEach(function(line){
+      if(isJa){
+        html+='<div style="background:white;border:1.5px solid '+s.color+'40;border-radius:14px;padding:11px 13px;margin-bottom:9px;">'+
+          '<div style="font-size:16px;font-weight:800;color:#1A1A1A;margin-bottom:2px;">'+line.jp+'</div>'+
+          '<div style="font-size:12px;color:#888;font-style:italic;margin-bottom:3px;">'+line.ro+'</div>'+
+          '<div style="font-size:12px;color:#666;">'+line.ko+'</div>'+
+          '<button onclick="spk(\''+line.jp.replace(/\'/g,"\\'")+'\',\'ja-JP\')" style="margin-top:7px;background:'+s.color+';border:none;border-radius:10px;padding:4px 12px;color:white;font-size:11px;font-weight:700;">🔊 듣기</button>'+
+          '</div>';
+      }else{
+        var isN=line.r==='n';
+        html+='<div style="display:flex;flex-direction:'+(isN?'row':'row-reverse')+';margin-bottom:10px;align-items:flex-end;gap:8px;">'+
+          '<span style="font-size:18px;flex-shrink:0;">'+(isN?'🧑‍💼':'🧳')+'</span>'+
+          '<div style="background:'+(isN?s.color+'18':'white')+';border:1.5px solid '+(isN?s.color+'50':'#DDD')+';border-radius:'+(isN?'4px 14px 14px 14px':'14px 4px 14px 14px')+';padding:9px 12px;max-width:84%;">'+
+          '<div style="font-size:10px;color:'+(isN?s.color:'#AAA')+';font-weight:700;margin-bottom:2px;">'+(isN?'Local/Staff 🧑‍💼':'Traveler 🧳')+'</div>'+
+          '<div style="font-size:14px;color:#1A1A1A;line-height:1.55;font-weight:600;">'+line.en+'</div>'+
+          '<div style="font-size:12px;color:#888;margin-top:3px;">'+line.ko+'</div>'+
+          '<button onclick="spk(\''+line.en.replace(/\'/g,"\\'")+'\');" style="margin-top:7px;background:'+s.color+';border:none;border-radius:10px;padding:4px 12px;color:white;font-size:11px;font-weight:700;">🔊 듣기</button>'+
+          '</div></div>';
+      }
+    });
+    html+='<div style="background:#FFFCEE;border:2px solid #F0D850;border-radius:12px;padding:11px;margin-top:4px;display:flex;gap:8px;">'+
+      '<span>💡</span><div><div style="font-size:11px;font-weight:800;color:#9A7800;margin-bottom:2px;">TIP</div>'+
+      '<div style="font-size:12px;color:#7A5800;line-height:1.6;">'+sc2.tip.ko+'</div></div></div>';
+    var enLines=isJa?sc2.lines.map(function(l){return l.jp;}):sc2.lines.map(function(l){return l.en;});
+    PLAY_LINES=enLines;
+    html+='<button id="paBtn" onclick="playAll(PLAY_LINES,\''+(isJa?'ja-JP':'en-US')+'\')" style="width:100%;margin-top:12px;background:linear-gradient(135deg,'+TC.a+','+TC.b+');border:none;border-radius:14px;padding:13px;color:white;font-size:14px;font-weight:800;">🔊 전체 대화 듣기</button>';
+    html+='<button onclick="TRAVEL_ITEM=null;render(travelHTML());" style="width:100%;margin-top:8px;background:white;border:2px solid '+TC.a+'40;border-radius:12px;padding:10px;color:'+TC.a+';font-size:13px;font-weight:700;">← 목록으로</button>';
+    return html;
+  }
+
+  // QUICK PHRASES
+  if(TRAVEL_TAB==='quick'){
+    var html='<div style="font-size:14px;font-weight:800;color:'+TC.a+';margin-bottom:12px;">⚡ 여행 빠른 표현</div>';
+    TRAVEL_QUICK.forEach(function(section){
+      html+='<div style="font-size:12px;font-weight:800;color:'+TC.a+';margin:10px 0 7px;">'+section.section+'</div>';
+      section.items.forEach(function(p){
+        html+='<div style="background:white;border-radius:12px;padding:10px 12px;margin-bottom:7px;border:1.5px solid #E8D8C0;display:flex;align-items:center;justify-content:space-between;">'+
+          '<div style="flex:1;"><div style="font-size:12px;color:#888;margin-bottom:2px;">'+p.ko+'</div>'+
+          '<div style="font-size:13px;font-weight:700;color:#222;">'+p.en+'</div></div>'+
+          '<button onclick="spk(\''+p.en.replace(/\'/g,"\\'")+'\')" style="background:'+TC.a+';border:none;border-radius:10px;padding:7px 12px;color:white;font-size:13px;flex-shrink:0;margin-left:8px;font-weight:700;">🔊</button></div>';
+      });
+    });
+    return html;
+  }
+
+  // COMMUNITY (shared with main app)
+  if(TRAVEL_TAB==='community'){
+    var html='<div style="font-size:14px;font-weight:800;color:'+TC.a+';margin-bottom:4px;">💬 익명 커뮤니티</div>'+
+      '<div style="font-size:11px;color:#AAA;margin-bottom:12px;">욕설·비방 시 신고로 삭제됩니다.</div>';
+    if(!LNAME){
+      html+='<div style="background:white;border-radius:14px;padding:14px;margin-bottom:14px;border:2px solid #E8D8C0;">'+
+        '<div style="font-size:13px;font-weight:700;margin-bottom:8px;">닉네임 설정</div>'+
+        '<div style="display:flex;gap:8px;"><input id="ni" placeholder="닉네임 입력" style="flex:1;padding:8px 12px;border-radius:10px;border:1.5px solid #DDD;font-size:13px;outline:none;"/>'+
+        '<button onclick="setName();render(travelHTML());" style="background:'+TC.a+';border:none;border-radius:10px;padding:8px 14px;color:white;font-weight:700;font-size:13px;">입장</button></div></div>';
+    }else{
+      html+='<div style="background:'+TC.a+'15;border-radius:12px;padding:10px 14px;margin-bottom:12px;border:1.5px solid '+TC.a+'40;display:flex;justify-content:space-between;align-items:center;">'+
+        '<span style="font-size:13px;font-weight:600;color:'+TC.b+';">👤 '+LNAME+'</span>'+
+        '<button onclick="LNAME=\'\';sv();render(travelHTML());" style="background:none;border:none;color:#AAA;font-size:12px;">나가기</button></div>'+
+        '<div style="background:white;border-radius:14px;padding:13px;margin-bottom:12px;border:2px solid #E8D8C0;">'+
+        '<textarea id="pta" placeholder="여행 팁이나 경험을 공유해보세요 😊" rows="3" style="width:100%;padding:9px;border-radius:10px;border:1.5px solid #DDD;font-size:13px;resize:none;outline:none;"></textarea>'+
+        '<button onclick="submitPost();render(travelHTML());" style="width:100%;margin-top:8px;background:linear-gradient(135deg,'+TC.a+','+TC.b+');border:none;border-radius:10px;padding:10px;color:white;font-weight:700;font-size:13px;">게시하기</button></div>';
+    }
+    POSTS_DATA.forEach(function(post){
+      html+='<div style="background:white;border-radius:14px;padding:13px;margin-bottom:10px;border:1.5px solid #E8D8C0;">'+
+        '<div style="display:flex;justify-content:space-between;margin-bottom:7px;">'+
+        '<span style="font-size:13px;font-weight:700;color:#444;">'+post.user+'</span>'+
+        '<span style="font-size:11px;color:#BBB;">'+post.time+'</span></div>'+
+        '<div style="font-size:14px;color:#333;line-height:1.55;margin-bottom:9px;">'+post.text+'</div>'+
+        '<div style="display:flex;gap:8px;">'+
+        '<button onclick="likePost('+post.id+');render(travelHTML());" style="background:#F5F0EA;border:none;border-radius:10px;padding:5px 12px;font-size:12px;">❤️ '+post.likes+'</button>'+
+        '<button onclick="reportPost('+post.id+');render(travelHTML());" style="background:#FFF0F0;border:1px solid #FFB8B8;border-radius:10px;padding:5px 12px;font-size:12px;color:#CC4444;">🚨 신고</button>'+
+        '</div></div>';
+    });
+    return html;
+  }
+
+  return '';
+}
+
+// ═══════════════════════════
+// ACTIONS
+// ═══════════════════════════
+function selItem(id){
+  var list=sc();
+  for(var i=0;i<list.length;i++){if(list[i].id===id){ITEM=list[i];SCRIPT=0;render(modeHTML());return;}}
+}
+function doAttend(){
+  if(ATTENDED)return;
+  ATTENDED=true;
+  try{localStorage.setItem('attDate',new Date().toDateString());}catch(e){}
+  STREAK++;
+  var bonus=STREAK%7===0?30:0;
+  addPts(10+bonus);sv();
+  if(bonus>0){MSG='🎉 7일 연속! +'+(10+bonus)+'pts!';MSGTYPE='ok';}
+  else{MSG='✅ 출석 완료! +10pts';MSGTYPE='ok';}
+  render(modeHTML());setTimeout(function(){MSG='';render(modeHTML());},2500);
+}
+function setName(){var v=document.getElementById('ni');if(v&&v.value.trim()){LNAME=v.value.trim();sv();render(modeHTML());}}
+function submitPost(){
+  var ta=document.getElementById('pta');
+  if(!ta||!ta.value.trim()||!LNAME)return;
+  var an=['🐰','🐻','🦊','🐼','🐨'];
+  POSTS_DATA.unshift({id:Date.now(),user:'익명'+an[Math.floor(Math.random()*an.length)],time:'방금 전',text:ta.value,likes:0});
+  sv();render(modeHTML());
+}
+function likePost(id){for(var i=0;i<POSTS_DATA.length;i++){if(POSTS_DATA[i].id===id){POSTS_DATA[i].likes++;break;}}sv();render(modeHTML());}
+function reportPost(id){if(confirm('이 게시글을 신고할까요?')){POSTS_DATA=POSTS_DATA.filter(function(p){return p.id!==id;});sv();render(modeHTML());}}
+function requestNotif(){
+  if(!('Notification' in window)){alert('이 브라우저는 알림을 지원하지 않아요. Chrome을 사용해 주세요!');return;}
+  Notification.requestPermission().then(function(p){
+    if(p==='granted'){
+      var tv=getTodayVocab();
+      new Notification('🏥 Medical English',{body:'오늘의 단어: '+tv[0].en+' = '+tv[0].ko});
+      showMsg('✅ 알림이 허용됐어요! 매일 단어 알림을 받을 수 있어요.','ok');
+    }else{showMsg('알림 권한이 거부됐어요. 브라우저 설정에서 허용해 주세요.','err');}
+  });
+}
+
+// ── PASSWORD LOCK (서버 검증) ────────────
+var PW_ERR=''; var PW_CHECKING=false;
+function checkLock(){
+  PW_CHECKING=true;
+  render('<div style="min-height:100vh;background:linear-gradient(160deg,#F0E8FF,#E8F0FF);display:flex;align-items:center;justify-content:center;"><div style="font-size:14px;color:#7A5AAA;font-weight:700;">불러오는 중...</div></div>');
+  fetch('/api/check').then(function(res){
+    PW_CHECKING=false;
+    if(res.ok){render(homeHTML());loadSheetData(false);}
+    else{SCREEN='lock';PW_ERR='';render(lockHTML());}
+  }).catch(function(){
+    PW_CHECKING=false;
+    SCREEN='lock';PW_ERR='⚠️ 서버 연결 실패. 잠시 후 다시 시도해주세요.';render(lockHTML());
+  });
+}
+function lockHTML(){
+  return '<div style="min-height:100vh;background:linear-gradient(160deg,#F0E8FF,#E8F0FF);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;">'+
+    '<div style="font-size:48px;margin-bottom:10px;">🏥</div>'+
+    '<div style="font-size:17px;font-weight:800;color:#3A2A6A;margin-bottom:16px;">Medical English Pro</div>'+
+    '<input id="pwIn" type="password" inputmode="text" maxlength="40" placeholder="비밀번호 입력" style="width:100%;max-width:280px;padding:14px;border-radius:12px;border:1.5px solid #DDD;font-size:18px;margin-bottom:10px;outline:none;text-align:center;" onkeydown="if(event.key===\'Enter\')submitLockPw();"/>'+
+    (PW_ERR?'<div style="color:#CC3333;font-size:12px;margin-bottom:10px;">'+PW_ERR+'</div>':'')+
+    '<button id="pwSubmitBtn" onclick="submitLockPw()" style="width:100%;max-width:280px;background:linear-gradient(135deg,#7A5AAA,#5A3A8A);border:none;border-radius:12px;padding:12px;color:white;font-weight:800;font-size:14px;">'+(PW_CHECKING?'확인 중...':'입장하기')+'</button>'+
+    '</div>';
+}
+function submitLockPw(){
+  var v=document.getElementById('pwIn').value;
+  if(!v){PW_ERR='비밀번호를 입력해주세요.';render(lockHTML());return;}
+  PW_CHECKING=true;render(lockHTML());
+  fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:v})})
+    .then(function(res){return res.json().then(function(data){return {ok:res.ok,data:data};});})
+    .then(function(r){
+      PW_CHECKING=false;
+      if(r.ok&&r.data&&r.data.success){
+        render(homeHTML());loadSheetData(false);
+      }else{
+        PW_ERR='비밀번호가 틀렸어요.';render(lockHTML());
+      }
+    }).catch(function(){
+      PW_CHECKING=false;
+      PW_ERR='⚠️ 서버 연결 실패. 잠시 후 다시 시도해주세요.';render(lockHTML());
+    });
+}
+function logoutApp(){
+  if(!confirm('로그아웃할까요? 다음에 열 때 비밀번호를 다시 입력해야 해요.'))return;
+  fetch('/api/logout',{method:'POST'}).then(function(){
+    SCREEN='lock';PW_ERR='';render(lockHTML());
+  }).catch(function(){
+    SCREEN='lock';PW_ERR='';render(lockHTML());
+  });
+}
+
+window.onload=function(){
+  if(window.speechSynthesis){
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged=function(){window.speechSynthesis.getVoices();};
+  }
+  checkLock();
+};
+</script>
+</body>
+</html>
