@@ -62,9 +62,18 @@ function playAll(lines,lang){
     u.lang=itemLang;u.rate=(typeof item==='object'&&item.slow)?0.72:0.84;u.volume=1.0;
     var vs=window.speechSynthesis.getVoices();
     for(var j=0;j<vs.length;j++){if(vs[j].lang===itemLang){u.voice=vs[j];break;}}
-    u.onend=function(){i++;setTimeout(next,380);};
-    u.onerror=function(){i++;setTimeout(next,380);};
+    var myIndex=i;var advanced=false;
+    function advance(){
+      if(advanced)return;
+      advanced=true;
+      if(i===myIndex)i++;
+      setTimeout(next,380);
+    }
+    u.onend=advance;
+    u.onerror=advance;
     window.speechSynthesis.speak(u);
+    var estMs=Math.max(2200,text.length*130);
+    setTimeout(function(){if(!advanced&&PLAYING)advance();},estMs);
   }
   next();
 }
