@@ -1094,6 +1094,14 @@ function buildLeaderFromRows(rows){
   });
   return order.map(function(id){return byId[id];});
 }
+var TRAVEL_GROUP_ORDER=['t_checkin','t_security','t_immigration','t_customs','t_flight','t_airport_counter','t_baggage','t_hotelin','t_hotelout','t_complaint','t_reserve','t_order','t_pay','t_cafe','t_restaurant','t_shopping','t_refund','t_shopping_ex','t_taxi','t_subway','t_directions','t_transit','t_sightseeing','t_photo','t_tour','t_theft','t_sick','t_lost','t_jp_greeting','t_jp_restaurant','t_uk_tips','t_no_tips','t_immigration_ex'];
+function sortTravelSC(){
+  TRAVEL_SC.sort(function(a,b){
+    var ia=TRAVEL_GROUP_ORDER.indexOf(a.id);if(ia<0)ia=999;
+    var ib=TRAVEL_GROUP_ORDER.indexOf(b.id);if(ib<0)ib=999;
+    return ia-ib;
+  });
+}
 function mergeScenarios(base,extra){
   extra.forEach(function(e){
     var idx=-1;
@@ -1125,6 +1133,7 @@ function loadSheetData(manual){
     mergeScenarios(HOSP_SC,buildScenariosFromRows(objs,'hospital'));
     mergeScenarios(SCHOOL_SC,buildScenariosFromRows(objs,'school'));
     mergeScenarios(TRAVEL_SC,buildScenariosFromRows(objs,'travel'));
+    sortTravelSC();
     mergeScenarios(EMERG,buildScenariosFromRows(objs,'emergency'));
     mergeScenarios(LEADER_SC,buildLeaderFromRows(objs));
     SHEET_STATUS='✅ 최신 데이터 불러옴 · '+objs.length+'줄 · '+new Date().toLocaleTimeString();
@@ -1375,6 +1384,9 @@ function emergHTML(){
     html+='<div style="background:white;border-radius:14px;padding:14px;margin-bottom:12px;border:2px solid #FFAAAA;">'+
       '<div style="font-size:13px;font-weight:800;color:#CC2222;margin-bottom:6px;">⚡ 즉시 119가 필요한 상황</div>'+
       '<div style="font-size:12px;color:#666;line-height:1.7;">• 의식 없음 · 맥박/호흡 없음<br>• 심한 호흡곤란<br>• 아나필락시스<br>• 멈추지 않는 경련<br>• 심한 흉통</div></div>';
+    var emAllLines=collectAllLinesAnnounced(EMERG);
+    PLAY_LINES=emAllLines;
+    html+='<button id="paBtn" onclick="playAll(PLAY_LINES,\'en-US\')" style="width:100%;margin-bottom:12px;background:linear-gradient(135deg,#CC2222,#AA0000);border:none;border-radius:14px;padding:12px;color:white;font-size:13px;font-weight:800;">🔊 응급상황 전체 통합 듣기 ('+EMERG.length+'개 상황)</button>';
     EMERG.forEach(function(em){
       html+='<button onclick="EM_ITEM=\''+em.id+'\';EM_SCRIPT=0;render(emergHTML());" style="width:100%;background:white;border:2px solid '+em.color+'40;border-radius:16px;padding:14px;text-align:left;margin-bottom:10px;display:flex;align-items:center;gap:12px;">'+
         '<span style="font-size:30px;">'+em.icon+'</span>'+
@@ -1889,7 +1901,7 @@ function contentHTML(){
         '<div style="font-size:13px;color:#666;">'+v.ko+'</div>'+
         '<div style="font-size:11px;color:#AAA;margin-top:3px;font-style:italic;">'+v.ex+'</div></div>'+
         '<div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0;">'+
-        '<button onclick="spk(\''+v.en+'\')" style="background:'+c.a+';border:none;border-radius:10px;padding:6px 11px;color:white;font-size:13px;">🔊</button>'+
+        '<button onclick="spk(\''+v.en.replace(/\'/g,"\\'")+'\')" style="background:'+c.a+';border:none;border-radius:10px;padding:6px 11px;color:white;font-size:13px;">🔊</button>'+
         '<button onclick="'+(done?'':('MEM.push('+i+');addPts(3);render(modeHTML());'))+'" style="background:'+(done?'#CCC':c.b)+';border:none;border-radius:10px;padding:6px 10px;color:white;font-size:11px;font-weight:700;cursor:'+(done?'default':'pointer')+';">'+(done?'✓':'외움')+'</button>'+
         '</div></div></div>';
     });
